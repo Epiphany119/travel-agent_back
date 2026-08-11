@@ -1,0 +1,41 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: travel-agent-web
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/travel_agent?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: epiphany
+    password: 123456
+
+  sql:
+    init:
+      mode: never
+
+  # Spring AI 配置 (智谱GLM-4-Flash)
+  ai:
+    openai:
+      api-key: 34dac5570c3d4f008d89d0825a7fe127.otTD8a8YWKpby3iK
+      base-url: https://open.bigmodel.cn/api/paas/v4
+      chat:
+        options:
+          model: glm-4-flash
+          temperature: 0.7
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: AUTO
+      table-underline: true
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+# 日志
+logging:
+  level:
+    com.travel: INFO

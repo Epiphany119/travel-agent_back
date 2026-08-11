@@ -1,0 +1,16 @@
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/domain/entity/MealRecommendation.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/domain/entity/Itinerary.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/domain/entity/AttractionVisit.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/infra/repository/ItineraryRepositoryImpl.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/infra/persistence/ItineraryMapper.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/domain/repository/ItineraryRepository.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/api/dto/MealResponse.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/api/dto/AttractionResponse.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/api/dto/ItineraryResponse.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/domain/entity/DayPlan.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/api/dto/DayPlanResponse.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/api/dto/TravelPlanResponse.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/api/dto/GenerateItineraryRequest.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/api/TravelPlanningApi.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/application/service/TravelPlanningService.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-itinerary-biz/src/main/java/com/travel/module/itinerary/biz/infra/persistence/ItineraryPO.java

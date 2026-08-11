@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.travel</groupId>
+        <artifactId>travel-agent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>travel-web</artifactId>
+    <name>travel-web</name>
+    <description>Web启动模块 - 聚合所有业务模块</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-module-agent-biz</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-module-itinerary-biz</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-module-user-biz</artifactId>
+        </dependency>
+
+        <!-- MySQL驱动 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,4 @@
+# Agent模块占位配置（实际启动由travel-web负责）
+logging:
+  level:
+    com.travel: DEBUG

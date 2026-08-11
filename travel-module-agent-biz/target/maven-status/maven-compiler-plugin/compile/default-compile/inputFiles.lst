@@ -1,0 +1,16 @@
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/api/AgentApi.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/infra/persistence/ChatSessionPO.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/api/dto/SendMessageRequest.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/domain/entity/TravelPreference.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/api/dto/MessageResponse.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/domain/service/AgentCoreService.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/domain/entity/ChatMessage.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/infra/repository/ChatSessionRepositoryImpl.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/api/dto/SessionResponse.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/api/dto/CreateSessionRequest.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/application/service/AgentApplicationService.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/domain/entity/ChatSession.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/infra/persistence/ChatMessagePO.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/infra/persistence/ChatSessionMapper.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/infra/persistence/ChatMessageMapper.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/domain/repository/ChatSessionRepository.java

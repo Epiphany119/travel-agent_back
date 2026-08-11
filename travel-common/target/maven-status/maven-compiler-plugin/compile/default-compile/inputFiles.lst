@@ -1,0 +1,7 @@
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-common/src/main/java/com/travel/common/core/enums/TravelType.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-common/src/main/java/com/travel/common/core/exception/GlobalExceptionHandler.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-common/src/main/java/com/travel/common/core/enums/SessionStatus.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-common/src/main/java/com/travel/common/core/result/ApiResult.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-common/src/main/java/com/travel/common/core/util/IdGenerator.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-common/src/main/java/com/travel/common/core/exception/BusinessException.java
+/Users/epiphany/IdeaProjects/travel-agent-back/travel-common/src/main/java/com/travel/common/core/enums/BudgetLevel.java
