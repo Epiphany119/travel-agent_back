@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/travel-plans")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class TravelPlanningApi {
     private final TravelPlanningService planningService;
     @PostMapping("/generate")

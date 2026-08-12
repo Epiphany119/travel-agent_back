@@ -1,7 +1,11 @@
+com/travel/agent/common/service/RateLimitService$RateLimitData.class
 com/travel/common/core/enums/TravelType.class
 com/travel/common/core/util/IdGenerator.class
+com/travel/agent/common/service/RateLimitService$ServiceLimit.class
 com/travel/common/core/exception/BusinessException.class
 com/travel/common/core/enums/BudgetLevel.class
+com/travel/agent/common/service/RateLimitService.class
 com/travel/common/core/enums/SessionStatus.class
 com/travel/common/core/result/ApiResult.class
+com/travel/agent/common/exception/RateLimitException.class
 com/travel/common/core/exception/GlobalExceptionHandler.class

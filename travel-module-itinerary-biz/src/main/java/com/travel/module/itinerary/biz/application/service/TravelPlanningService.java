@@ -1,46 +1,199 @@
 package com.travel.module.itinerary.biz.application.service;
 
+import com.travel.agent.tool.PoiTool;
+import com.travel.agent.tool.WeatherTool;
 import com.travel.module.itinerary.biz.api.dto.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import java.util.*;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 
 /**
- * Deterministic planning fallback. It deliberately produces transparent, editable suggestions
- * while external maps/weather/LLM tools are unavailable, so the UI is never blocked by a model call.
+ * Builds the UI contract from real provider responses. No attraction, restaurant, rating or
+ * opening-hour value is invented: unavailable provider data is returned as an explicit warning.
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class TravelPlanningService {
-    private static final List<String> THEMES = List.of("城市初见与地标漫游", "人文街区与在地生活", "自然风光与慢旅行", "美食探索与夜色体验");
+    private final WeatherTool weatherTool;
+    private final PoiTool poiTool;
 
     public TravelPlanResponse generate(GenerateItineraryRequest request) {
         String city = request.getDestination().trim();
-        int days = request.getDays();
-        double perDay = Math.floor(request.getBudget() / days);
-        List<DayPlanResponse> plans = new ArrayList<>();
-        for (int i = 0; i < days; i++) plans.add(day(city, i + 1, perDay, request.getTravelStyle()));
-        double estimate = Math.round(request.getBudget() * 0.86 * 100.0) / 100.0;
+        List<String> warnings = new ArrayList<>();
+        WeatherTool.WeatherResponse weather = queryWeather(city, warnings);
+        List<PoiTool.PoiInfo> attractions = Collections.emptyList();
+        List<PoiTool.PoiInfo> restaurants = Collections.emptyList();
+        // TODO: 高德 POI 暂时禁用，等和风天气调通后再开启
+        // List<PoiTool.PoiInfo> attractions = queryPoi(city, attractionKeyword(request), warnings);
+        // List<PoiTool.PoiInfo> restaurants = queryPoi(city, restaurantKeyword(request), warnings);
+        List<DayPlanResponse> dayPlans = buildDays(request, attractions, restaurants, weather);
+        double estimatedCost = estimateCost(request.getBudget(), attractions, restaurants);
+
         return TravelPlanResponse.builder()
                 .planId("TP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
-                .destination(city).days(days).totalBudget(request.getBudget()).estimatedCost(estimate)
-                .budgetStatus(estimate <= request.getBudget() ? "预算充足，预留了约 " + Math.round(request.getBudget() - estimate) + " 元弹性" : "建议上调预算或减少付费体验")
-                .overview(city + " · " + days + " 天「" + request.getTravelStyle() + "」路线，按区域串联安排，减少折返与无效通勤。")
-                .dayPlans(plans)
-                .travelTips(List.of("热门场馆、演出与交通票请提前在官方渠道预约。", "同一区域的点位集中安排；每天留出 60–90 分钟机动时间。", "餐厅评分仅作筛选参考，到店前请核对营业时间、排队和过敏原信息。"))
-                .packingList(List.of("身份证件与充电宝", "舒适步行鞋", "薄外套 / 雨具", "常用药与防晒用品"))
+                .destination(city)
+                .days(request.getDays())
+                .totalBudget(request.getBudget())
+                .estimatedCost(estimatedCost)
+                .budgetStatus("预算由你输入；餐饮与门票价格需以地点官方信息为准")
+                .overview(buildOverview(city, attractions, restaurants, weather))
+                .dayPlans(dayPlans)
+                .travelTips(buildTips(weather, warnings))
+                .packingList(buildPackingList(weather))
+                .dataSources(List.of("高德地图 POI", "和风天气"))
+                .dataWarnings(warnings)
                 .build();
     }
 
-    private DayPlanResponse day(String city, int number, double budget, String style) {
-        String theme = THEMES.get((number - 1) % THEMES.size());
-        List<AttractionResponse> attractions = List.of(
-                AttractionResponse.builder().name(city + "城市地标 / 核心景区").description("建议选择官方开放的代表性景点，提前预约并避开午间高峰。").duration(2.5).ticketPrice(0D).openTime("以官方公告为准").address("核心城区").rating(4.7).visitOrder(1).build(),
-                AttractionResponse.builder().name(city + "特色街区与文化空间").description("步行串联周边小店、展馆或公园，按现场情况灵活取舍。").duration(2D).ticketPrice(0D).openTime("以商家公告为准").address("同区域步行范围").rating(4.6).visitOrder(2).build());
-        List<MealResponse> meals = List.of(
-                MealResponse.builder().mealType("午餐").restaurantName("当地口碑餐馆（到店前确认）").cuisine("本地特色").avgPrice((double) Math.round(budget * .12)).address("景区周边 1 公里内").reason("减少跨区通勤，优先选择明码标价、近期评价稳定的店铺。").rating(4.5).build(),
-                MealResponse.builder().mealType("晚餐").restaurantName("夜市 / 社区餐馆（到店前确认）").cuisine("当地风味").avgPrice((double) Math.round(budget * .16)).address("住宿或夜游区域附近").reason("避开网红排队店，预留替代选项。").rating(4.5).build());
-        return DayPlanResponse.builder().dayNumber(number).date("第 " + number + " 天").theme(theme + " · " + style)
-                .attractions(attractions).meals(meals).transportation("优先步行 + 公共交通；跨区出行建议避开早晚高峰。")
-                .notes("门票、营业时间与天气会变化，请在出发前通过官方渠道复核。")
-                .dayBudget(budget).build();
+    private WeatherTool.WeatherResponse queryWeather(String city, List<String> warnings) {
+        WeatherTool.WeatherRequest request = new WeatherTool.WeatherRequest();
+        request.setCity(city);
+        request.setType("7d");
+        WeatherTool.WeatherResponse response = weatherTool.apply(request);
+        if (!response.isSuccess()) warnings.add("和风天气未返回数据：" + safe(response.getMessage()));
+        return response;
     }
+
+    private List<PoiTool.PoiInfo> queryPoi(String city, String keyword, List<String> warnings) {
+        PoiTool.AmapRequest request = new PoiTool.AmapRequest();
+        request.setAction("poi");
+        request.setCity(city);
+        request.setCitylimit(true);
+        request.setKeywords(keyword);
+        request.setOffset(20);
+        PoiTool.AmapResponse response = poiTool.apply(request);
+        if (!response.isSuccess()) {
+            warnings.add("高德地图「" + keyword + "」查询失败：" + safe(response.getMessage()));
+            return Collections.emptyList();
+        }
+        if (response.getPois() == null || response.getPois().isEmpty()) {
+            warnings.add("高德地图未找到「" + keyword + "」相关地点");
+            return Collections.emptyList();
+        }
+        return response.getPois();
+    }
+
+    private List<DayPlanResponse> buildDays(GenerateItineraryRequest request, List<PoiTool.PoiInfo> attractions,
+                                            List<PoiTool.PoiInfo> restaurants, WeatherTool.WeatherResponse weather) {
+        List<DayPlanResponse> days = new ArrayList<>();
+        double perDay = Math.floor(request.getBudget() / request.getDays());
+        for (int day = 0; day < request.getDays(); day++) {
+            List<AttractionResponse> points = selectAttractions(attractions, day);
+            List<MealResponse> meals = selectMeals(restaurants, day);
+            WeatherTool.DailyWeather forecast = forecastFor(weather, day);
+            days.add(DayPlanResponse.builder()
+                    .dayNumber(day + 1)
+                    .date(forecast != null && forecast.getDate() != null ? forecast.getDate() : "第 " + (day + 1) + " 天")
+                    .theme(buildTheme(request.getTravelStyle(), forecast))
+                    .attractions(points)
+                    .meals(meals)
+                    .transportation(points.size() > 1 ? "地点坐标来自高德地图；请在出行当日使用高德地图确认实时路线与拥堵情况。" : "暂无足够 POI 数据生成同日路线。")
+                    .notes(weatherNote(forecast))
+                    .dayBudget(perDay)
+                    .build());
+        }
+        return days;
+    }
+
+    private List<AttractionResponse> selectAttractions(List<PoiTool.PoiInfo> pois, int day) {
+        if (pois.isEmpty()) return Collections.emptyList();
+        List<AttractionResponse> result = new ArrayList<>();
+        int count = Math.min(2, pois.size());
+        for (int offset = 0; offset < count; offset++) {
+            PoiTool.PoiInfo poi = pois.get((day * 2 + offset) % pois.size());
+            result.add(AttractionResponse.builder().name(poi.getName()).description("高德地图 POI：" + safe(poi.getType()))
+                    .duration(null).ticketPrice(null).openTime("请以地点官方公告为准")
+                    .address(composeAddress(poi)).rating(null).visitOrder(offset + 1).build());
+        }
+        return result;
+    }
+
+    private List<MealResponse> selectMeals(List<PoiTool.PoiInfo> pois, int day) {
+        if (pois.isEmpty()) return Collections.emptyList();
+        List<MealResponse> result = new ArrayList<>();
+        String[] mealTypes = {"午餐", "晚餐"};
+        for (int offset = 0; offset < Math.min(2, pois.size()); offset++) {
+            PoiTool.PoiInfo poi = pois.get((day * 2 + offset) % pois.size());
+            result.add(MealResponse.builder().mealType(mealTypes[offset]).restaurantName(poi.getName())
+                    .cuisine(safe(poi.getType())).avgPrice(null).address(composeAddress(poi))
+                    .reason("来自高德地图 POI 查询结果；请出发前确认营业时间、价格与排队情况。")
+                    .rating(null).build());
+        }
+        return result;
+    }
+
+    private String attractionKeyword(GenerateItineraryRequest request) {
+        if (request.getInterests() != null && request.getInterests().contains("自然")) return "公园 景区";
+        if (request.getInterests() != null && request.getInterests().contains("人文")) return "博物馆 古迹";
+        return "旅游景点";
+    }
+
+    private String restaurantKeyword(GenerateItineraryRequest request) {
+        return request.getInterests() != null && request.getInterests().contains("美食") ? "当地美食" : "餐厅";
+    }
+
+    private String buildOverview(String city, List<PoiTool.PoiInfo> attractions, List<PoiTool.PoiInfo> restaurants,
+                                 WeatherTool.WeatherResponse weather) {
+        return city + "：已从高德地图获取 " + attractions.size() + " 个景点候选和 " + restaurants.size()
+                + " 个餐饮候选" + (weather.isSuccess() ? "，并结合和风天气预报安排每日提醒。" : "；天气数据暂不可用，出发前请再次查询。" );
+    }
+
+    private List<String> buildTips(WeatherTool.WeatherResponse weather, List<String> warnings) {
+        List<String> tips = new ArrayList<>();
+        if (weather.isSuccess() && weather.getWeatherList() != null) {
+            weather.getWeatherList().stream().limit(7).forEach(day -> tips.add(day.getDate() + "：" + safe(day.getTextDay())
+                    + "，" + day.getTempMin() + "–" + day.getTempMax() + "℃，" + weatherAdvice(day)));
+        }
+        if (tips.isEmpty()) tips.add("天气服务暂不可用，请在出发前通过官方天气渠道复核。");
+        tips.addAll(warnings);
+        return tips;
+    }
+
+    private List<String> buildPackingList(WeatherTool.WeatherResponse weather) {
+        List<String> list = new ArrayList<>(List.of("身份证件与充电宝", "舒适步行鞋"));
+        if (weather.isSuccess() && weather.getWeatherList() != null && weather.getWeatherList().stream()
+                .anyMatch(day -> day.getPrecip() != null && day.getPrecip() > 0)) list.add("雨具");
+        if (weather.isSuccess() && weather.getWeatherList() != null && weather.getWeatherList().stream()
+                .anyMatch(day -> day.getUvIndex() != null && day.getUvIndex() >= 5)) list.add("防晒用品");
+        return list;
+    }
+
+    private WeatherTool.DailyWeather forecastFor(WeatherTool.WeatherResponse weather, int day) {
+        if (!weather.isSuccess() || weather.getWeatherList() == null || weather.getWeatherList().isEmpty()) return null;
+        return weather.getWeatherList().get(Math.min(day, weather.getWeatherList().size() - 1));
+    }
+
+    private String buildTheme(String style, WeatherTool.DailyWeather forecast) {
+        return style + (forecast == null ? " · 等待天气数据" : " · " + safe(forecast.getTextDay()));
+    }
+
+    private String weatherNote(WeatherTool.DailyWeather day) {
+        return day == null ? "未接入到当日天气数据，请在出发前复核。" : "和风天气：" + safe(day.getTextDay()) + "，"
+                + day.getTempMin() + "–" + day.getTempMax() + "℃。" + weatherAdvice(day);
+    }
+
+    private String weatherAdvice(WeatherTool.DailyWeather day) {
+        if (day.getPrecip() != null && day.getPrecip() > 0) return "建议携带雨具。";
+        if (day.getUvIndex() != null && day.getUvIndex() >= 5) return "紫外线较强，注意防晒。";
+        return "请按实时体感调整衣物。";
+    }
+
+    private double estimateCost(double budget, List<PoiTool.PoiInfo> attractions, List<PoiTool.PoiInfo> restaurants) {
+        // Neither provider returns reliable ticket/restaurant prices; do not fabricate a total.
+        return 0D;
+    }
+
+    private String composeAddress(PoiTool.PoiInfo poi) {
+        String prefix = poi.getAdname() == null ? "" : poi.getAdname();
+        String address = poi.getAddress() == null ? "地址请在高德地图详情确认" : poi.getAddress();
+        return prefix + address;
+    }
+
+    private String safe(String value) { return value == null || value.isBlank() ? "未提供" : value; }
 }

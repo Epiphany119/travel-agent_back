@@ -154,7 +154,11 @@ public class ChatSessionRepositoryImpl implements ChatSessionRepository {
 
     private ChatMessagePO toMessagePO(ChatMessage msg, String sessionId) {
         ChatMessagePO po = new ChatMessagePO();
-        po.setMessageId(msg.getMessageId());
+        if (msg.getMessageId() == null) {
+            po.setMessageId(java.util.UUID.randomUUID().toString().replace("-", ""));
+        } else {
+            po.setMessageId(msg.getMessageId());
+        }
         po.setSessionId(sessionId);
         po.setRole(msg.getRole());
         po.setContent(msg.getContent());

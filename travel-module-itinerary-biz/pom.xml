@@ -19,6 +19,11 @@
             <groupId>com.travel</groupId>
             <artifactId>travel-common</artifactId>
         </dependency>
+        <!-- Reuse the verified external-data tools (QWeather + AMap) from the agent module. -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-module-agent-biz</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -2,23 +2,29 @@ server:
   port: 8080
 
 spring:
+  # 本地开发会自动加载 application-local.yaml（已被 .gitignore 忽略，里面放真实 key）
+  # 生产环境应当通过 ENV 变量或 secret 管理工具注入
+  config:
+    import:
+      - optional:classpath:application-local.yaml
+      - optional:file:.env[.properties]
   application:
     name: travel-agent-web
 
   datasource:
-    url: jdbc:mysql://localhost:3306/travel_agent?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: ${TRAVEL_DB_URL:jdbc:mysql://localhost:3306/travel_agent?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     driver-class-name: com.mysql.cj.jdbc.Driver
-    username: epiphany
-    password: 123456
+    username: ${TRAVEL_DB_USERNAME:epiphany}
+    password: ${TRAVEL_DB_PASSWORD:123456}
 
   sql:
     init:
       mode: never
 
-  # Spring AI 配置 (智谱GLM-4-Flash)
+  # Spring AI 配置 (智谱GLM-4-Flash) - API Key 从 application-local.yaml 或 ENV 注入
   ai:
     openai:
-      api-key: 34dac5570c3d4f008d89d0825a7fe127.otTD8a8YWKpby3iK
+      api-key: ${ZHIPU_API_KEY:}
       base-url: https://open.bigmodel.cn/api/paas/v4
       chat:
         options:
@@ -34,6 +40,39 @@ mybatis-plus:
       id-type: AUTO
       table-underline: true
   mapper-locations: classpath*:/mapper/**/*.xml
+
+  # 旅行规划 Agent 配置
+travel:
+  # 熔断器配置
+  ratelimit:
+    enabled: true
+    weather:
+      limit: 800
+    amap:
+      limit: 4700
+  # 天气 API / 翻译配置 - API Key 从 application-local.yaml 或 ENV 注入
+  weather:
+    api-key: ${WEATHER_API_KEY:}
+    enabled: true
+    translate:
+      # 智谱实时翻译开关。当前智谱 endpoint 在项目里 404，关闭以避免无谓重试；调试好智谱后改成 true
+      use-llm: false
+  # 高德地图 API 配置 - API Key 从 application-local.yaml 或 ENV 注入
+  amap:
+    api-key: ${GAODE_API_KEY:}
+    enabled: true
+
+# 和风天气 API 配置（兼容旧配置）- API Key 从 application-local.yaml 或 ENV 注入
+qweather:
+  api-key: ${WEATHER_API_KEY:}
+  enabled: true
+  daily-limit: 800
+
+# 高德地图 API 配置（兼容旧配置）- API Key 从 application-local.yaml 或 ENV 注入
+gaode:
+  api-key: ${GAODE_API_KEY:}
+  enabled: true
+  daily-limit: 4700
 
 # 日志
 logging:

@@ -15,6 +15,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/agent")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class AgentApi {
 
     private final AgentApplicationService agentService;

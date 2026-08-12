@@ -16,4 +16,8 @@ public class TravelPlanResponse {
     private List<DayPlanResponse> dayPlans;
     private List<String> travelTips;
     private List<String> packingList;
+    /** Providers that supplied facts in this response; used by the UI to disclose data provenance. */
+    private List<String> dataSources;
+    /** A provider failure is explicit instead of being silently replaced with made-up recommendations. */
+    private List<String> dataWarnings;
 }
