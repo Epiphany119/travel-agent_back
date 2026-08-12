@@ -1,74 +1,77 @@
 package com.travel.module.user.biz.infra.repository;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.travel.module.user.biz.domain.entity.User;
 import com.travel.module.user.biz.domain.repository.UserRepository;
-import com.travel.module.user.biz.infra.persistence.UserMapper;
-import com.travel.module.user.biz.infra.persistence.UserPO;
+import com.travel.module.user.biz.infra.persistence.UserProfileMapper;
+import com.travel.module.user.biz.infra.persistence.UserProfilePO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
+/**
+ * 用户仓储实现
+ */
 @Repository
-@Primary
 @RequiredArgsConstructor
 public class UserRepositoryImpl implements UserRepository {
-
-    private final UserMapper userMapper;
-
+    
+    private final UserProfileMapper mapper;
+    
     @Override
     public User findById(Long userId) {
-        UserPO po = userMapper.selectById(userId);
-        if (po == null) {
-            return null;
-        }
-        return toUser(po);
+        UserProfilePO po = mapper.findById(userId);
+        return po != null ? toEntity(po) : null;
     }
-
+    
+    @Override
+    public User findByUserId(String userId) {
+        UserProfilePO po = mapper.findByUserId(userId);
+        return po != null ? toEntity(po) : null;
+    }
+    
     @Override
     public User save(User user) {
-        UserPO po = toUserPO(user);
-        if (po.getId() == null) {
+        UserProfilePO existing = mapper.findByUserId(user.getUsername());
+        
+        if (existing != null) {
+            // 更新
+            existing.setNickname(user.getNickname());
+            existing.setAvatar(user.getAvatar());
+            existing.setEmail(user.getEmail());
+            existing.setPhone(user.getPhone());
+            existing.setUpdatedAt(LocalDateTime.now());
+            mapper.updateByUserId(existing);
+            return user;
+        } else {
+            // 新增
+            UserProfilePO po = new UserProfilePO();
+            String newUserId = user.getId() != null ? String.valueOf(user.getId()) : UUID.randomUUID().toString();
+            po.setUserId(newUserId);
+            po.setUsername(user.getUsername() != null ? user.getUsername() : newUserId);
+            po.setNickname(user.getNickname());
+            po.setAvatar(user.getAvatar());
+            po.setEmail(user.getEmail());
+            po.setPhone(user.getPhone());
             po.setCreatedAt(LocalDateTime.now());
             po.setUpdatedAt(LocalDateTime.now());
-            userMapper.insert(po);
-            user.setId(po.getId());
-        } else {
-            po.setUpdatedAt(LocalDateTime.now());
-            userMapper.updateById(po);
+            mapper.insert(po);
+            user.setId(Long.parseLong(newUserId.replace("user_", "")));
+            return user;
         }
-        return user;
     }
-
-    private User toUser(UserPO po) {
+    
+    private User toEntity(UserProfilePO po) {
         User user = new User();
-        user.setId(po.getId());
+        user.setId(1L); // 默认值
         user.setUsername(po.getUsername());
         user.setNickname(po.getNickname());
         user.setAvatar(po.getAvatar());
         user.setEmail(po.getEmail());
         user.setPhone(po.getPhone());
-        user.setFrequentDestination(po.getFrequentDestination());
-        user.setDefaultPreferences(po.getDefaultPreferences());
         user.setCreatedAt(po.getCreatedAt());
         user.setUpdatedAt(po.getUpdatedAt());
         return user;
-    }
-
-    private UserPO toUserPO(User user) {
-        UserPO po = new UserPO();
-        po.setId(user.getId());
-        po.setUsername(user.getUsername());
-        po.setNickname(user.getNickname());
-        po.setAvatar(user.getAvatar());
-        po.setEmail(user.getEmail());
-        po.setPhone(user.getPhone());
-        po.setFrequentDestination(user.getFrequentDestination());
-        po.setDefaultPreferences(user.getDefaultPreferences());
-        po.setCreatedAt(user.getCreatedAt());
-        po.setUpdatedAt(user.getUpdatedAt());
-        return po;
     }
 }

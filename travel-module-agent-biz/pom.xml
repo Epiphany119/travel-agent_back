@@ -21,6 +21,12 @@
             <artifactId>travel-common</artifactId>
         </dependency>
 
+        <!-- User Module -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-module-user-biz</artifactId>
+        </dependency>
+
         <!-- MCP Client -->
         <dependency>
             <groupId>com.travel</groupId>

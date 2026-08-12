@@ -32,6 +32,12 @@
             <artifactId>travel-module-user-biz</artifactId>
         </dependency>
 
+        <!-- A2A 运行时（Host Agent + 子Agent + 编排器） -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-a2a-runtime</artifactId>
+        </dependency>
+
         <!-- MySQL驱动 -->
         <dependency>
             <groupId>com.mysql</groupId>

@@ -12,17 +12,21 @@
     <description>智能旅行规划 Agent - 芋道模块化架构</description>
 
     <modules>
+        <!-- Common 公共模块 -->
         <module>travel-common</module>
-        <module>travel-mcp-protocol</module>
-        <module>travel-module-agent-biz</module>
-        <module>travel-mcp-client</module>
-        <module>travel-mcp-server-weather</module>
-        <module>travel-mcp-server-poi</module>
-        <module>travel-mcp-server-meal</module>
-        <module>travel-mcp-server-budget</module>
-        <module>travel-a2a-runtime</module>
-        <module>travel-module-itinerary-biz</module>
+
+        <!-- MCP 父工程 (包含7个子模块) -->
+        <module>travel-module-mcp-biz</module>
+
+        <!-- 业务模块 (按依赖顺序) -->
         <module>travel-module-user-biz</module>
+        <module>travel-module-agent-biz</module>
+        <module>travel-module-itinerary-biz</module>
+
+        <!-- A2A 运行时 -->
+        <module>travel-a2a-runtime</module>
+
+        <!-- Web 入口 -->
         <module>travel-web</module>
     </modules>
 
@@ -73,6 +77,70 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- MCP 父工程 -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-module-mcp-biz</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+            </dependency>
+
+            <!-- MCP Protocol -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Client -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Weather -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-weather</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: POI -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-poi</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Meal -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-meal</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Budget -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-budget</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Itinerary -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-itinerary</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- A2A Runtime Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-a2a-runtime</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- Agent Module -->
             <dependency>
                 <groupId>com.travel</groupId>
@@ -93,55 +161,6 @@
                 <artifactId>travel-module-user-biz</artifactId>
                 <version>${project.version}</version>
             </dependency>
-
-            <!-- MCP Protocol Module -->
-            <dependency>
-                <groupId>com.travel</groupId>
-                <artifactId>travel-mcp-protocol</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- MCP Client Module -->
-            <dependency>
-                <groupId>com.travel</groupId>
-                <artifactId>travel-mcp-client</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- MCP Server Weather Module -->
-            <dependency>
-                <groupId>com.travel</groupId>
-                <artifactId>travel-mcp-server-weather</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- MCP Server POI Module -->
-            <dependency>
-                <groupId>com.travel</groupId>
-                <artifactId>travel-mcp-server-poi</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- MCP Server Meal Module -->
-            <dependency>
-                <groupId>com.travel</groupId>
-                <artifactId>travel-mcp-server-meal</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- MCP Server Budget Module -->
-            <dependency>
-                <groupId>com.travel</groupId>
-                <artifactId>travel-mcp-server-budget</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- A2A Runtime Module -->
-            <dependency>
-                <groupId>com.travel</groupId>
-                <artifactId>travel-a2a-runtime</artifactId>
-                <version>${project.version}</version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -151,7 +170,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-        
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>

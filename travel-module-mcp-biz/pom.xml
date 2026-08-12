@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.travel</groupId>
+        <artifactId>travel-agent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>travel-module-mcp-biz</artifactId>
+    <name>travel-module-mcp-biz</name>
+    <packaging>pom</packaging>
+    <description>MCP模块父工程 - 聚合所有MCP相关模块</description>
+
+    <modules>
+        <!-- MCP Protocol -->
+        <module>travel-mcp-protocol</module>
+        <!-- MCP Client -->
+        <module>travel-mcp-client</module>
+        <!-- MCP Server: Weather -->
+        <module>travel-mcp-server-weather</module>
+        <!-- MCP Server: POI -->
+        <module>travel-mcp-server-poi</module>
+        <!-- MCP Server: Meal -->
+        <module>travel-mcp-server-meal</module>
+        <!-- MCP Server: Budget -->
+        <module>travel-mcp-server-budget</module>
+        <!-- MCP Server: Itinerary -->
+        <module>travel-mcp-server-itinerary</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <spring-ai.version>1.0.0-M4</spring-ai.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring AI -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- MCP Protocol Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Client Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Weather -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-weather</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: POI -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-poi</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Meal -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-meal</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Budget -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-budget</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server: Itinerary -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-itinerary</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Jackson -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

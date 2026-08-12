@@ -13,6 +13,16 @@
     <file url="file://$PROJECT_DIR$/travel-mcp-server-weather/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/travel-module-agent-biz/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/travel-module-itinerary-biz/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-a2a-runtime/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-mcp-client/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-mcp-protocol/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-mcp-server-budget/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-mcp-server-itinerary/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-mcp-server-meal/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-mcp-server-poi/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/travel-module-mcp-biz/travel-mcp-server-weather/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/travel-module-user-biz/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/travel-web/src/main/java" charset="UTF-8" />
   </component>
