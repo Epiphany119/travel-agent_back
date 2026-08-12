@@ -11,6 +11,7 @@
         <module name="travel-module-itinerary-biz" />
         <module name="travel-module-user-biz" />
         <module name="travel-mcp-server-weather" />
+        <module name="travel-a2a-runtime" />
         <module name="travel-mcp-server-meal" />
         <module name="travel-mcp-protocol" />
         <module name="travel-mcp-server-poi" />
@@ -22,6 +23,7 @@
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="travel-a2a-runtime" options="-parameters" />
       <module name="travel-agent" options="-parameters" />
       <module name="travel-common" options="-parameters" />
       <module name="travel-mcp-client" options="-parameters" />

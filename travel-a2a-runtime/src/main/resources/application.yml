@@ -1,0 +1,31 @@
+# A2A Runtime Configuration
+
+server:
+  port: 8086
+
+spring:
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:your-api-key-here}
+      model: gpt-4o-mini
+      base-url: https://api.openai.com/v1
+
+# MCP Server URLs (from travel-mcp-client)
+mcp:
+  server:
+    weather:
+      url: http://localhost:8081
+    poi:
+      url: http://localhost:8082
+    meal:
+      url: http://localhost:8083
+    budget:
+      url: http://localhost:8084
+    itinerary:
+      url: http://localhost:8085
+
+# A2A Runtime specific settings
+a2a:
+  runtime:
+    timeout-seconds: 30
+    sse-timeout-minutes: 5

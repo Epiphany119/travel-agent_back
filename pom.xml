@@ -20,6 +20,7 @@
         <module>travel-mcp-server-poi</module>
         <module>travel-mcp-server-meal</module>
         <module>travel-mcp-server-budget</module>
+        <module>travel-a2a-runtime</module>
         <module>travel-module-itinerary-biz</module>
         <module>travel-module-user-biz</module>
         <module>travel-web</module>
@@ -132,6 +133,13 @@
             <dependency>
                 <groupId>com.travel</groupId>
                 <artifactId>travel-mcp-server-budget</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- A2A Runtime Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-a2a-runtime</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

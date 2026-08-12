@@ -1,0 +1,254 @@
+# Travel Agent Docker Compose Configuration
+# One-command startup for all services
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in your API keys
+#   2. Run: docker compose up -d
+#   3. Access the app at: http://localhost:3000
+
+services:
+  #==========================================
+  # MySQL Database
+  #==========================================
+  mysql:
+    image: mysql:8
+    container_name: travel-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-travel_agent}
+      MYSQL_USER: ${MYSQL_USER:-travel}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-travel123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./data/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - travel-network
+
+  #==========================================
+  # MCP Servers (Weather, POI, Meal, Budget, Itinerary)
+  #==========================================
+  weather:
+    build:
+      context: .
+      dockerfile: travel-mcp-server-weather/Dockerfile
+    container_name: travel-weather
+    restart: unless-stopped
+    environment:
+      AMAP_KEY: ${AMAP_KEY:-${GAODE_API_KEY}}
+      WEATHER_API_KEY: ${WEATHER_API_KEY}
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8081 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - travel-network
+
+  poi:
+    build:
+      context: .
+      dockerfile: travel-mcp-server-poi/Dockerfile
+    container_name: travel-poi
+    restart: unless-stopped
+    environment:
+      AMAP_KEY: ${AMAP_KEY:-${GAODE_API_KEY}}
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8082 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - travel-network
+
+  meal:
+    build:
+      context: .
+      dockerfile: travel-mcp-server-meal/Dockerfile
+    container_name: travel-meal
+    restart: unless-stopped
+    environment:
+      POI_MCP_URL: ${POI_MCP_URL:-http://poi:8082}
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8083 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - travel-network
+    depends_on:
+      poi:
+        condition: service_healthy
+
+  budget:
+    build:
+      context: .
+      dockerfile: travel-mcp-server-budget/Dockerfile
+    container_name: travel-budget
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8084 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - travel-network
+
+  itinerary:
+    build:
+      context: .
+      dockerfile: travel-mcp-server-itinerary/Dockerfile
+    container_name: travel-itinerary
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8085 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - travel-network
+
+  #==========================================
+  # A2A Runtime (Agent-to-Agent Orchestration)
+  #==========================================
+  a2a-runtime:
+    build:
+      context: .
+      dockerfile: travel-a2a-runtime/Dockerfile
+    container_name: travel-a2a-runtime
+    restart: unless-stopped
+    environment:
+      # AI API Key
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # MCP Server URLs (Docker internal network)
+      WEATHER_MCP_URL: http://weather:8081
+      POI_MCP_URL: http://poi:8082
+      MEAL_MCP_URL: http://meal:8083
+      BUDGET_MCP_URL: http://budget:8084
+      ITINERARY_MCP_URL: http://itinerary:8085
+      JAVA_OPTS: "-Xms512m -Xmx1024m"
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8086 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - travel-network
+    depends_on:
+      weather:
+        condition: service_healthy
+      poi:
+        condition: service_healthy
+      meal:
+        condition: service_healthy
+      budget:
+        condition: service_healthy
+      itinerary:
+        condition: service_healthy
+
+  #==========================================
+  # Main Web Application (8080 - Independent API Service)
+  #==========================================
+  travel-web:
+    build:
+      context: .
+      dockerfile: travel-web/Dockerfile
+    container_name: travel-web
+    restart: unless-stopped
+    environment:
+      # Database
+      TRAVEL_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-travel_agent}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      TRAVEL_DB_USERNAME: ${MYSQL_USER:-travel}
+      TRAVEL_DB_PASSWORD: ${MYSQL_PASSWORD:-travel123}
+      # API Keys
+      WEATHER_API_KEY: ${WEATHER_API_KEY}
+      GAODE_API_KEY: ${GAODE_API_KEY}
+      JAVA_OPTS: "-Xms512m -Xmx1024m"
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - travel-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  #==========================================
+  # Frontend (React + Nginx) - Port 3000
+  #==========================================
+  frontend:
+    build:
+      context: ../travel-agent-front
+      dockerfile: Dockerfile
+    container_name: travel-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      VITE_API_BASE_URL: /api
+      VITE_A2A_RUNTIME_URL: /a2a
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - travel-network
+    depends_on:
+      a2a-runtime:
+        condition: service_healthy
+
+#==========================================
+# Networks
+#==========================================
+networks:
+  travel-network:
+    driver: bridge
+
+#==========================================
+# Volumes
+#==========================================
+volumes:
+  mysql_data:
+    driver: local
