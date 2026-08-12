@@ -1,0 +1,122 @@
+package com.travel.mcp.server.budget.service;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+
+@Slf4j
+@Service
+public class BudgetService {
+
+    private static final double BASE_COST_PER_DAY = 200.0;
+    private static final double DAILY_COST = 100.0;
+
+    private static final Map<String, Double> LEVEL_MULTIPLIERS = Map.of(
+            "economy", 0.7,
+            "standard", 1.0,
+            "luxury", 2.0
+    );
+
+    private static final double TIER1_COEFFICIENT = 1.3;
+    private static final double TIER2_COEFFICIENT = 1.0;
+    private static final double TIER3_COEFFICIENT = 0.8;
+
+    private static final List<String> TIER1_CITIES = List.of(
+            "北京", "上海", "广州", "深圳", "杭州", "南京", "苏州"
+    );
+
+    private static final List<String> TIER3_CITIES = List.of(
+            "拉萨", "三亚", "大理", "丽江", "西宁", "银川", "呼和浩特", "乌鲁木齐"
+    );
+
+    public BudgetEstimate estimate(int days, List<String> cities, String level) {
+        if (days <= 0) {
+            return BudgetEstimate.failure("天数必须大于0");
+        }
+        if (cities == null || cities.isEmpty()) {
+            return BudgetEstimate.failure("城市列表不能为空");
+        }
+
+        double levelMultiplier = LEVEL_MULTIPLIERS.getOrDefault(
+                level != null ? level.toLowerCase() : "standard",
+                1.0
+        );
+
+        double cityCoefficient = calculateCityCoefficient(cities);
+
+        double totalCost = calculateTotalCost(days, levelMultiplier, cityCoefficient);
+
+        return BudgetEstimate.success(days, cities, level, cityCoefficient, totalCost);
+    }
+
+    private double calculateCityCoefficient(List<String> cities) {
+        int tier1Count = 0;
+        int tier3Count = 0;
+        int otherCount = 0;
+
+        for (String city : cities) {
+            if (TIER1_CITIES.contains(city)) {
+                tier1Count++;
+            } else if (TIER3_CITIES.contains(city)) {
+                tier3Count++;
+            } else {
+                otherCount++;
+            }
+        }
+
+        if (tier1Count > 0) {
+            return TIER1_COEFFICIENT;
+        } else if (tier3Count > 0) {
+            return TIER3_COEFFICIENT;
+        } else {
+            return TIER2_COEFFICIENT;
+        }
+    }
+
+    private double calculateTotalCost(int days, double levelMultiplier, double cityCoefficient) {
+        double base = BASE_COST_PER_DAY + (days * DAILY_COST);
+        return Math.round(base * levelMultiplier * cityCoefficient * 100.0) / 100.0;
+    }
+
+    public static class BudgetEstimate {
+        private boolean success;
+        private String error;
+        private Integer days;
+        private List<String> cities;
+        private String level;
+        private Double cityCoefficient;
+        private Double totalCost;
+        private Double costBreakdown;
+
+        public static BudgetEstimate success(int days, List<String> cities, String level,
+                                            double cityCoefficient, double totalCost) {
+            BudgetEstimate estimate = new BudgetEstimate();
+            estimate.success = true;
+            estimate.days = days;
+            estimate.cities = cities;
+            estimate.level = level != null ? level : "standard";
+            estimate.cityCoefficient = cityCoefficient;
+            estimate.totalCost = totalCost;
+            estimate.costBreakdown = BASE_COST_PER_DAY + (days * DAILY_COST);
+            return estimate;
+        }
+
+        public static BudgetEstimate failure(String error) {
+            BudgetEstimate estimate = new BudgetEstimate();
+            estimate.success = false;
+            estimate.error = error;
+            return estimate;
+        }
+
+        public boolean isSuccess() { return success; }
+        public String getError() { return error; }
+        public Integer getDays() { return days; }
+        public List<String> getCities() { return cities; }
+        public String getLevel() { return level; }
+        public Double getCityCoefficient() { return cityCoefficient; }
+        public Double getTotalCost() { return totalCost; }
+        public Double getCostBreakdown() { return costBreakdown; }
+    }
+}

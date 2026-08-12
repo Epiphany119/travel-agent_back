@@ -7,9 +7,13 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="travel-web" />
+        <module name="travel-mcp-server-budget" />
         <module name="travel-module-itinerary-biz" />
         <module name="travel-module-user-biz" />
+        <module name="travel-mcp-server-weather" />
+        <module name="travel-mcp-server-meal" />
         <module name="travel-mcp-protocol" />
+        <module name="travel-mcp-server-poi" />
         <module name="travel-module-agent-biz" />
         <module name="travel-common" />
         <module name="travel-mcp-client" />
@@ -22,6 +26,10 @@
       <module name="travel-common" options="-parameters" />
       <module name="travel-mcp-client" options="-parameters" />
       <module name="travel-mcp-protocol" options="-parameters" />
+      <module name="travel-mcp-server-budget" options="-parameters" />
+      <module name="travel-mcp-server-meal" options="-parameters" />
+      <module name="travel-mcp-server-poi" options="-parameters" />
+      <module name="travel-mcp-server-weather" options="-parameters" />
       <module name="travel-module-agent-biz" options="-parameters" />
       <module name="travel-module-itinerary-biz" options="-parameters" />
       <module name="travel-module-user-biz" options="-parameters" />

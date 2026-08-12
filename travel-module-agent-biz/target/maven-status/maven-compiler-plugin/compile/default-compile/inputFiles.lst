@@ -8,7 +8,6 @@
 /Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/agent/config/SchedulingConfig.java
 /Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/agent/controller/RateLimitController.java
 /Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/domain/entity/ChatMessage.java
-/Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/agent/config/SpringAIConfig.java
 /Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/agent/controller/TravelAgentController.java
 /Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/infra/repository/ChatSessionRepositoryImpl.java
 /Users/epiphany/IdeaProjects/travel-agent-back/travel-module-agent-biz/src/main/java/com/travel/module/agent/biz/api/dto/SessionResponse.java

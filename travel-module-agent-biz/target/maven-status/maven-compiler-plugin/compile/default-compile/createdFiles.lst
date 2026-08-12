@@ -16,7 +16,6 @@ com/travel/agent/tool/PoiTool$GeocodeResult$GeocodeResultBuilder.class
 com/travel/agent/tool/WeatherTool$WeatherRequest.class
 com/travel/agent/tool/PoiTool$PathStep$PathStepBuilder.class
 com/travel/agent/tool/WeatherTool$DailyWeather.class
-com/travel/agent/config/SpringAIConfig.class
 com/travel/module/agent/biz/infra/persistence/ChatMessagePO.class
 com/travel/agent/controller/RateLimitController.class
 com/travel/module/agent/biz/api/dto/MessageResponse$ToolCallInfo$ToolCallInfoBuilder.class

@@ -1,0 +1,10 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: travel-mcp-server-meal
+
+travel:
+  meal:
+    poi-server-url: ${POI_MCP_URL:http://localhost:8082}

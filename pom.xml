@@ -16,6 +16,10 @@
         <module>travel-mcp-protocol</module>
         <module>travel-module-agent-biz</module>
         <module>travel-mcp-client</module>
+        <module>travel-mcp-server-weather</module>
+        <module>travel-mcp-server-poi</module>
+        <module>travel-mcp-server-meal</module>
+        <module>travel-mcp-server-budget</module>
         <module>travel-module-itinerary-biz</module>
         <module>travel-module-user-biz</module>
         <module>travel-web</module>
@@ -100,6 +104,34 @@
             <dependency>
                 <groupId>com.travel</groupId>
                 <artifactId>travel-mcp-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server Weather Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-weather</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server POI Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-poi</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server Meal Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-meal</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Server Budget Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-server-budget</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
