@@ -181,3 +181,82 @@ export function subscribePlanStream(
 
   return () => controller.abort()
 }
+
+
+// ─── A2A SSE 流式订阅（真实后端）──────────────────────────────────────────────
+export interface A2AStreamEvent {
+  event: string
+  data: any
+}
+
+/**
+ * 订阅 A2A 后端 SSE 流
+ * 使用 GET /a2a/tasks/stream 并传递查询参数
+ * 返回取消函数
+ */
+export function subscribeA2AStream(
+  params: TravelPlanRequest,
+  onEvent: (event: { name: string; data: any }) => void
+): () => void {
+  const controller = new AbortController()
+
+  const queryParams = new URLSearchParams({
+    destination: params.destination,
+    days: String(params.days),
+    budget: String(params.budget),
+    travelers: String(params.travelers || 1),
+    travelStyle: params.travelStyle || '深度体验',
+    interests: (params.interests || []).join(',')
+  })
+
+  fetch(`/a2a/tasks/stream?${queryParams.toString()}`, {
+    method: 'GET',
+    headers: { Accept: 'text/event-stream' },
+    signal: controller.signal
+  })
+    .then(async (response) => {
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let currentEventName = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEventName = line.slice(7).trim()
+          } else if (line.startsWith('data: ')) {
+            const rawData = line.slice(6).trim()
+            if (!rawData) continue
+            try {
+              const parsed = JSON.parse(rawData)
+              onEvent({ name: currentEventName || parsed.event || 'unknown', data: parsed.data || parsed })
+              currentEventName = ''
+            } catch {
+              // ignore parse error
+            }
+          } else if (line === '') {
+            currentEventName = ''
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onEvent({ name: 'error', data: { code: 'FETCH_ERROR', message: err.message } })
+      }
+    })
+
+  return () => controller.abort()
+}

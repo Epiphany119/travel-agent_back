@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
-import { createSession, sendMessage, generateTravelPlan, subscribePlanStream, type TravelPlan, type StreamEvent } from '@/api/agent'
+import { subscribeA2AStream, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
 import DayPlanCard from '@/components/DayPlanCard.vue'
 
@@ -14,7 +14,6 @@ const budget = ref(3000)
 const travelers = ref(2)
 const travelStyle = ref('轻松漫游')
 const interests = ref(['美食', '人文'])
-const loading = ref(false)
 const travelPlan = ref<TravelPlan | null>(null)
 const activeDay = ref(1)
 const styles = ['轻松漫游', '深度人文', '美食优先', '亲子友好']
@@ -27,30 +26,7 @@ const formatContent = (content: string) => marked(content)
 
 let cancelStream: (() => void) | null = null
 
-async function generate() {
-  if (!destination.value.trim()) return ElMessage.warning('先告诉我想去哪里')
-  loading.value = true
-
-  try {
-    const planRes = await generateTravelPlan({
-      destination: destination.value,
-      days: days.value,
-      budget: budget.value,
-      travelers: travelers.value,
-      travelStyle: travelStyle.value,
-      interests: interests.value
-    })
-    travelPlan.value = planRes.data
-    activeDay.value = 1
-    ElMessage.success('你的专属路线已生成')
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '生成失败，请稍后重试')
-  } finally {
-    loading.value = false
-  }
-}
-
-// ─── 流式生成（PR#2 阶段使用模拟，后续接真实 SSE）──────────────────────────────
+// ─── 流式生成（通过 A2A 后端 SSE）──────────────────────────────────────
 
 async function generateStream() {
   if (!destination.value.trim()) return ElMessage.warning('先告诉我想去哪里')
@@ -59,27 +35,48 @@ async function generateStream() {
   streamStore.reset()
   streamStore.isStreaming = true
   travelPlan.value = null
+  activeDay.value = 1
 
-  // 方式 A（PR#2 阶段）：前端独立模拟 SSE，不依赖后端
-  simulateStream()
-
-  // 方式 B（PR#5 后端 SSE 上线后替换为）：
-  // try {
-  //   const planRes = await generateTravelPlan({
-  //     destination: destination.value,
-  //     days: days.value,
-  //     budget: budget.value,
-  //     travelers: travelers.value,
-  //     travelStyle: travelStyle.value,
-  //     interests: interests.value
-  //   })
-  //   const planId = planRes.data.planId
-  //   cancelStream = subscribePlanStream(planId, streamStore.handleEvent)
-  //   streamStore.isStreaming = true
-  // } catch (err: any) {
-  //   streamStore.error.value = err?.message || '请求失败'
-  //   streamStore.isStreaming = false
-  // }
+  // 连接 A2A 后端 SSE 流
+  cancelStream = subscribeA2AStream({
+    destination: destination.value,
+    days: days.value,
+    budget: budget.value,
+    travelers: travelers.value,
+    travelStyle: travelStyle.value,
+    interests: interests.value
+  }, (event) => {
+    switch (event.name) {
+      case 'task_update':
+        // 任务状态更新，可忽略或展示
+        break
+      case 'tool_call':
+        streamStore.toolCalls.push({
+          name: event.data?.source || '未知工具',
+          args: event.data
+        })
+        break
+      case 'tool_result':
+        streamStore.currentToolResult = event.data?.message || event.data?.type || '完成'
+        break
+      case 'token':
+        if (typeof event.data === 'string') {
+          streamStore.fullText += event.data
+        }
+        break
+      case 'task_done':
+        streamStore.planId = event.data?.planId || null
+        streamStore.isStreaming = false
+        ElMessage.success('行程规划完成！')
+        break
+      case 'error':
+        streamStore.error = event.data?.message || '未知错误'
+        streamStore.isStreaming = false
+        break
+      default:
+        break
+    }
+  })
 }
 
 function cancelStreaming() {
@@ -88,85 +85,6 @@ function cancelStreaming() {
     cancelStream = null
   }
   streamStore.reset()
-}
-
-function simulateStream() {
-  streamStore.reset()
-  streamStore.isStreaming = true
-
-  const tokens = '好的，我来帮你规划杭州7日游。首先查询天气和景点信息，然后为你设计最优路线...'
-  let i = 0
-  const interval = setInterval(() => {
-    if (i < tokens.length) {
-      streamStore.fullText += tokens[i]
-      i++
-    } else {
-      clearInterval(interval)
-    }
-  }, 30)
-
-  setTimeout(() => {
-    streamStore.toolCalls.push({ name: 'weather.get_forecast', args: { city: destination.value, days: 7 } })
-  }, 800)
-
-  setTimeout(() => {
-    streamStore.currentToolResult = '7日天气预报完成：晴天为主，气温26-35°C，适合出行'
-  }, 1500)
-
-  setTimeout(() => {
-    streamStore.toolCalls.push({ name: 'poi.search', args: { city: destination.value, keywords: '西湖,灵隐寺,千岛湖' } })
-  }, 2200)
-
-  setTimeout(() => {
-    streamStore.currentToolResult = '找到20个热门景点，正在筛选最优组合...'
-  }, 3000)
-
-  setTimeout(() => {
-    streamStore.toolCalls.push({ name: 'route.optimize', args: { destination: destination.value, days: 7 } })
-  }, 3800)
-
-  setTimeout(() => {
-    streamStore.currentToolResult = '路线优化完成，已规划最优出行顺序'
-  }, 4600)
-
-  setTimeout(() => {
-    streamStore.dayPlans.push({
-      dayNumber: 1,
-      theme: '西湖深度游',
-      date: '2026-08-12',
-      morning: { plan: '苏堤春晓漫步', duration: '2小时', tips: '清晨人少景美', budget: 50 },
-      afternoon: { plan: '花港观鱼 + 雷峰塔登顶', duration: '4小时', tips: '登塔俯瞰西湖全景', budget: 80 },
-      evening: { plan: '湖滨步行街 + 西湖音乐喷泉', duration: '2小时', tips: '推荐外婆家晚餐', budget: 150 }
-    })
-  }, 5000)
-
-  setTimeout(() => {
-    streamStore.dayPlans.push({
-      dayNumber: 2,
-      theme: '灵隐寺祈福之旅',
-      date: '2026-08-13',
-      morning: { plan: '灵隐寺飞来峰', duration: '3小时', tips: '请香请早，人少心诚', budget: 75 },
-      afternoon: { plan: '龙井村品茶 + 十里梅坞', duration: '3小时', tips: '农家乐午餐推荐', budget: 120 },
-      evening: { plan: '河坊街夜市', duration: '2小时', tips: '手信小吃一条街', budget: 100 }
-    })
-  }, 6000)
-
-  setTimeout(() => {
-    streamStore.dayPlans.push({
-      dayNumber: 3,
-      theme: '千岛湖休闲度假',
-      date: '2026-08-14',
-      morning: { plan: '杭州 → 千岛湖（高铁）', duration: '1.5小时', tips: '提前订票，风景绝佳', budget: 120 },
-      afternoon: { plan: '千岛湖中心湖区游船', duration: '4小时', tips: '登3-4个岛屿，带遮阳', budget: 200 },
-      evening: { plan: '鱼街晚餐 + 湖畔散步', duration: '2小时', tips: '推荐有机鱼头煲', budget: 180 }
-    })
-  }, 7000)
-
-  setTimeout(() => {
-    streamStore.planId = 'DEMO-PLAN-001'
-    streamStore.isStreaming = false
-    ElMessage.success('行程规划完成！')
-  }, 8500)
 }
 </script>
 
@@ -254,16 +172,12 @@ function simulateStream() {
       </div>
 
       <div class="generate-row">
-        <button class="generate" :disabled="loading || streamStore.isStreaming" @click="generate">
-          <span>{{ loading ? '正在为你整理路线…' : '传统方式生成' }}</span>
-          <i>→</i>
-        </button>
         <button
           class="generate generate--stream"
-          :disabled="loading || streamStore.isStreaming"
+          :disabled="streamStore.isStreaming"
           @click="generateStream"
         >
-          <span>{{ streamStore.isStreaming ? '生成中…' : '🚀 流式生成（演示）' }}</span>
+          <span>{{ streamStore.isStreaming ? 'AI 正在为你规划行程…' : '✨ 生成专属旅行计划' }}</span>
           <i v-if="!streamStore.isStreaming">→</i>
           <i v-else class="spinner">⟳</i>
         </button>
@@ -273,6 +187,14 @@ function simulateStream() {
           @click="cancelStreaming"
         >
           <span>取消</span>
+        </button>
+        <button
+          v-if="streamStore.error"
+          class="generate generate--retry"
+          @click="generateStream"
+        >
+          <span>重新生成</span>
+          <i>↻</i>
         </button>
       </div>
     </section>
@@ -567,6 +489,7 @@ function simulateStream() {
   height: 22px;
   color: #37705d;
   font-size: 16px;
+  cursor: pointer;
 }
 
 .number-control b { font-size: 14px; }
@@ -610,11 +533,8 @@ function simulateStream() {
   border: 0;
   border-radius: 13px;
   padding: 15px 18px 15px 21px;
-  background: #ec7249;
-  color: white;
   font-weight: 800;
   font-size: 14px;
-  box-shadow: 0 10px 20px #ec724940;
   cursor: pointer;
   flex: 1;
 }
@@ -625,12 +545,23 @@ function simulateStream() {
 
 .generate--stream {
   background: linear-gradient(135deg, #4b8a73, #2d6a4f);
+  color: white;
+  box-shadow: 0 10px 20px #2d6a4f40;
 }
 
 .generate--cancel {
   background: #909399;
+  color: white;
   flex: 0;
   min-width: 80px;
+}
+
+.generate--retry {
+  background: #ec7249;
+  color: white;
+  box-shadow: 0 10px 20px #ec724940;
+  flex: 0;
+  min-width: 120px;
 }
 
 .spinner {
