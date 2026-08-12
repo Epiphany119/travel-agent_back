@@ -13,7 +13,9 @@
 
     <modules>
         <module>travel-common</module>
+        <module>travel-mcp-protocol</module>
         <module>travel-module-agent-biz</module>
+        <module>travel-mcp-client</module>
         <module>travel-module-itinerary-biz</module>
         <module>travel-module-user-biz</module>
         <module>travel-web</module>
@@ -84,6 +86,20 @@
             <dependency>
                 <groupId>com.travel</groupId>
                 <artifactId>travel-module-user-biz</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Protocol Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MCP Client Module -->
+            <dependency>
+                <groupId>com.travel</groupId>
+                <artifactId>travel-mcp-client</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

@@ -21,6 +21,12 @@
             <artifactId>travel-common</artifactId>
         </dependency>
 
+        <!-- MCP Client -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-mcp-client</artifactId>
+        </dependency>
+
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
