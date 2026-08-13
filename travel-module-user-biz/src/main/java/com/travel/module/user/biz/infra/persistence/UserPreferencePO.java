@@ -10,6 +10,9 @@ public class UserPreferencePO {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String userId;
+    private String name;
+    private String email;
+    private String phone;
     private String preferenceType;
     private String preferenceName;
     private String favoriteDestinations;
@@ -28,7 +31,7 @@ public class UserPreferencePO {
     private String interests;
     private String attractionTypes;
     private Integer maxAttractionsPerDay;
-    private Integer preferFreeAttractions;
+    private Boolean preferFreeAttractions;
     private String dietaryRequirements;
     private String preferredCuisines;
     private String cuisinePreferences;
@@ -44,10 +47,10 @@ public class UserPreferencePO {
     private String seatPreference;
     private Integer maxTransitDuration;
     private String travelCompanion;
-    private Integer hasChildren;
+    private Boolean hasChildren;
     private String childrenAges;
-    private Integer hasElderly;
-    private Integer hasDisability;
+    private Boolean hasElderly;
+    private Boolean hasDisability;
     private String activityLevel;
     private String pacePreference;
     private String mobilityRequirements;
@@ -55,8 +58,8 @@ public class UserPreferencePO {
     private Integer shoppingBudget;
     private String specialRequests;
     private Integer notifyBeforeTripDays;
-    private Integer notifyWeatherAlert;
-    private Integer notifyPriceChange;
+    private Boolean notifyWeatherAlert;
+    private Boolean notifyPriceChange;
     private String preferredLanguage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -1,99 +1,125 @@
 package com.travel.module.user.biz.api;
 
 import com.travel.common.core.result.ApiResult;
-import com.travel.module.user.biz.api.dto.*;
-import com.travel.module.user.biz.application.service.UserApplicationService;
-import com.travel.module.user.biz.application.service.UserPreferenceApplicationService;
+import com.travel.module.user.biz.domain.service.UserBizService;
+import com.travel.module.user.biz.infra.persistence.InspirationPO;
+import com.travel.module.user.biz.infra.persistence.JourneyPO;
+import com.travel.module.user.biz.infra.persistence.JourneyPointPO;
+import com.travel.module.user.biz.infra.persistence.JourneyImagePO;
+import com.travel.module.user.biz.infra.persistence.UserPreferencePO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.*;
 
-/**
- * 用户 API
- */
 @RestController
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
 public class UserApi {
     
-    private final UserApplicationService userService;
-    private final UserPreferenceApplicationService preferenceService;
-    
-    // ==================== 用户资料 API ====================
-    
-    /**
-     * 获取用户资料
-     */
-    @GetMapping("/profile/{userId}")
-    public ResponseEntity<ApiResult<UserProfileResponse>> getProfile(@PathVariable String userId) {
-        UserProfileResponse profile = userService.getProfile(userId);
-        if (profile == null) {
-            return ResponseEntity.ok(ApiResult.success(null));
+    private final UserBizService userBizService;
+
+    @GetMapping("/test")
+    public ApiResult<?> test() {
+        return ApiResult.success("UserApi is working!");
+    }
+
+    // ========== 灵感目的地 ==========
+    @GetMapping("/inspirations")
+    public ApiResult<?> listInspirations(@RequestParam(defaultValue = "user_001") String userId) {
+        List<InspirationPO> list = userBizService.listInspirations(userId);
+        return ApiResult.success(list);
+    }
+
+    @PostMapping("/inspirations")
+    public ApiResult<?> addInspiration(@RequestBody InspirationPO po) {
+        if (po.getUserId() == null) po.setUserId("user_001");
+        userBizService.addInspiration(po);
+        return ApiResult.success(po);
+    }
+
+    @PutMapping("/inspirations/{id}")
+    public ApiResult<?> updateInspiration(@PathVariable Long id, @RequestBody InspirationPO po) {
+        po.setId(id);
+        userBizService.updateInspiration(po);
+        return ApiResult.success("OK");
+    }
+
+    @DeleteMapping("/inspirations/{id}")
+    public ApiResult<?> deleteInspiration(@PathVariable Long id) {
+        userBizService.deleteInspiration(id);
+        return ApiResult.success("OK");
+    }
+
+    // ========== 旅程记录 ==========
+    @GetMapping("/journeys")
+    public ApiResult<?> listJourneys(@RequestParam(defaultValue = "user_001") String userId) {
+        List<JourneyPO> journeys = userBizService.listJourneys(userId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (JourneyPO j : journeys) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("journey", j);
+            item.put("points", userBizService.listJourneyPoints(j.getId()));
+            item.put("images", userBizService.listJourneyImages(j.getId()));
+            result.add(item);
         }
-        return ResponseEntity.ok(ApiResult.success(profile));
+        return ApiResult.success(result);
     }
-    
-    /**
-     * 更新用户资料
-     */
-    @PutMapping("/profile/{userId}")
-    public ResponseEntity<ApiResult<UserProfileResponse>> updateProfile(
-            @PathVariable String userId,
-            @RequestBody UserProfileRequest request) {
-        UserProfileResponse profile = userService.updateProfile(userId, request);
-        return ResponseEntity.ok(ApiResult.success(profile));
+
+    @GetMapping("/journeys/{id}")
+    public ApiResult<?> getJourney(@PathVariable Long id) {
+        JourneyPO j = userBizService.getJourney(id);
+        if (j == null) return ApiResult.error("旅程不存在");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("journey", j);
+        result.put("points", userBizService.listJourneyPoints(j.getId()));
+        result.put("images", userBizService.listJourneyImages(j.getId()));
+        return ApiResult.success(result);
     }
-    
-    // ==================== 用户偏好 API ====================
-    
-    /**
-     * 获取用户偏好
-     */
-    @GetMapping("/preference/{userId}")
-    public ResponseEntity<ApiResult<UserPreferenceResponse>> getPreference(
-            @PathVariable String userId,
-            @RequestParam(required = false, defaultValue = "default") String type) {
-        UserPreferenceResponse preference = preferenceService.getPreference(userId, type);
-        return ResponseEntity.ok(ApiResult.success(preference));
+
+    @PostMapping("/journeys")
+    public ApiResult<?> addJourney(@RequestBody JourneyPO po) {
+        if (po.getUserId() == null) po.setUserId("user_001");
+        userBizService.addJourney(po);
+        return ApiResult.success(po);
     }
-    
-    /**
-     * 获取用户所有偏好
-     */
-    @GetMapping("/preferences/{userId}")
-    public ResponseEntity<ApiResult<List<UserPreferenceResponse>>> getAllPreferences(@PathVariable String userId) {
-        List<UserPreferenceResponse> preferences = preferenceService.getAllPreferences(userId);
-        return ResponseEntity.ok(ApiResult.success(preferences));
+
+    @PutMapping("/journeys/{id}")
+    public ApiResult<?> updateJourney(@PathVariable Long id, @RequestBody JourneyPO po) {
+        po.setId(id);
+        userBizService.updateJourney(po);
+        return ApiResult.success("OK");
     }
-    
-    /**
-     * 保存用户偏好
-     */
-    @PostMapping("/preference/{userId}")
-    public ResponseEntity<ApiResult<UserPreferenceResponse>> savePreference(
-            @PathVariable String userId,
-            @RequestBody UserPreferenceRequest request) {
-        UserPreferenceResponse preference = preferenceService.savePreference(userId, request);
-        return ResponseEntity.ok(ApiResult.success(preference));
+
+    @DeleteMapping("/journeys/{id}")
+    public ApiResult<?> deleteJourney(@PathVariable Long id) {
+        userBizService.deleteJourney(id);
+        return ApiResult.success("OK");
     }
-    
-    /**
-     * 删除用户偏好
-     */
-    @DeleteMapping("/preference/{preferenceId}")
-    public ResponseEntity<ApiResult<Void>> deletePreference(@PathVariable Long preferenceId) {
-        preferenceService.deletePreference(preferenceId);
-        return ResponseEntity.ok(ApiResult.success(null));
+
+    @PostMapping("/journeys/{id}/points")
+    public ApiResult<?> saveJourneyPoints(@PathVariable Long id, @RequestBody List<JourneyPointPO> points) {
+        userBizService.saveJourneyPoints(id, points);
+        return ApiResult.success("OK");
     }
-    
-    /**
-     * 获取用户偏好摘要（供 Agent 使用）
-     */
-    @GetMapping("/preference/{userId}/summary")
-    public ResponseEntity<ApiResult<String>> getPreferenceSummary(@PathVariable String userId) {
-        String summary = preferenceService.getPreferenceSummary(userId);
-        return ResponseEntity.ok(ApiResult.success(summary));
+
+    @PostMapping("/journeys/{id}/images")
+    public ApiResult<?> saveJourneyImages(@PathVariable Long id, @RequestBody List<JourneyImagePO> images) {
+        userBizService.saveJourneyImages(id, images);
+        return ApiResult.success("OK");
+    }
+
+    // ========== 用户偏好 ==========
+    @GetMapping("/preferences")
+    public ApiResult<?> getPreferences(@RequestParam(defaultValue = "user_001") String userId) {
+        UserPreferencePO pref = userBizService.getPreference(userId);
+        return ApiResult.success(pref != null ? pref : new UserPreferencePO());
+    }
+
+    @PutMapping("/preferences")
+    public ApiResult<?> savePreferences(@RequestBody UserPreferencePO po) {
+        if (po.getUserId() == null) po.setUserId("user_001");
+        userBizService.savePreference(po);
+        return ApiResult.success("OK");
     }
 }
