@@ -4,9 +4,12 @@ import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { subscribeA2AStream, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
+import { useUserStore } from '@/stores/user'
+import { uploadAvatar } from '@/api'
 import DayPlanCard from '@/components/DayPlanCard.vue'
 
 const streamStore = useStreamStore()
+const userStore = useUserStore()
 
 const destination = ref('杭州')
 const days = ref(3)
@@ -18,6 +21,14 @@ const travelPlan = ref<TravelPlan | null>(null)
 const activeDay = ref(1)
 const styles = ['轻松漫游', '深度人文', '美食优先', '亲子友好']
 const interestOptions = ['美食', '人文', '自然', '摄影', '购物', '夜生活']
+
+// 头像上传相关
+const showAvatarDialog = ref(false)
+const uploadPreview = ref<string | null>(null)
+const selectedFile = ref<File | null>(null)
+const isUploading = ref(false)
+const uploadRef = ref()
+const dragOver = ref(false)
 
 const dayBudget = computed(() => (travelPlan.value?.dayPlans || [])[activeDay.value - 1]?.dayBudget)
 const currentDayPlan = computed(() => (travelPlan.value?.dayPlans || [])[activeDay.value - 1])
@@ -86,6 +97,93 @@ function cancelStreaming() {
   }
   streamStore.reset()
 }
+
+// ─── 头像上传功能 ────────────────────────────────────────────────────
+
+function openAvatarDialog() {
+  showAvatarDialog.value = true
+  uploadPreview.value = null
+}
+
+function handleDragOver(e: DragEvent) {
+  e.preventDefault()
+  dragOver.value = true
+}
+
+function handleDragLeave() {
+  dragOver.value = false
+}
+
+function handleDrop(e: DragEvent) {
+  e.preventDefault()
+  dragOver.value = false
+  const file = e.dataTransfer?.files[0]
+  if (file) handleFileSelect(file)
+}
+
+function handleFileInputChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) handleFileSelect(file)
+}
+
+function handleFileSelect(file: File) {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('请选择图片文件')
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('图片大小不能超过 5MB')
+    return
+  }
+  selectedFile.value = file
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    uploadPreview.value = e.target?.result as string
+  }
+  reader.readAsDataURL(file)
+}
+
+async function confirmUpload() {
+  if (!uploadPreview.value) {
+    ElMessage.warning('请先选择图片')
+    return
+  }
+
+  isUploading.value = true
+  try {
+    if (selectedFile.value) {
+      const res = await uploadAvatar(selectedFile.value)
+      // 上传成功，使用后端返回的头像URL
+      if (res && res.avatar) {
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+        const avatarUrl = res.avatar.startsWith('http') 
+          ? res.avatar 
+          : `${baseUrl}${res.avatar}`
+        userStore.setAvatar(avatarUrl)
+      } else {
+        // 如果后端没有返回URL，使用预览的本地URL
+        userStore.setAvatar(uploadPreview.value)
+      }
+    }
+    ElMessage.success('头像上传成功')
+  } catch (error) {
+    console.error('头像上传失败:', error)
+    ElMessage.error('头像上传失败，请重试')
+  } finally {
+    showAvatarDialog.value = false
+    uploadPreview.value = null
+    selectedFile.value = null
+    isUploading.value = false
+  }
+}
+
+function cancelUpload() {
+  showAvatarDialog.value = false
+  uploadPreview.value = null
+  selectedFile.value = null
+  dragOver.value = false
+}
 </script>
 
 <template>
@@ -95,7 +193,10 @@ function cancelStreaming() {
       <div class="nav-links">
         <a>灵感目的地</a>
         <a>我的旅程</a>
-        <button class="avatar">旅</button>
+        <button class="avatar" @click="openAvatarDialog">
+          <img v-if="userStore.avatar" :src="userStore.avatar" alt="头像" />
+          <span v-else>{{ userStore.nickname }}</span>
+        </button>
       </div>
     </nav>
 
@@ -338,6 +439,59 @@ function cancelStreaming() {
       </template>
     </section>
   </main>
+
+  <!-- 头像上传对话框 -->
+  <el-dialog
+    v-model="showAvatarDialog"
+    title="上传头像"
+    width="420px"
+    :close-on-click-modal="false"
+    class="avatar-dialog"
+  >
+    <div class="avatar-upload-content">
+      <!-- 预览区域 -->
+      <div class="avatar-preview">
+        <div v-if="uploadPreview" class="preview-image">
+          <img :src="uploadPreview" alt="预览" />
+        </div>
+        <div v-else class="preview-placeholder">
+          <span>点击或拖拽上传</span>
+        </div>
+      </div>
+
+      <!-- 上传区域 -->
+      <div
+        class="upload-zone"
+        :class="{ 'drag-over': dragOver }"
+        @dragover="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop"
+        @click="uploadRef?.click()"
+      >
+        <input
+          ref="uploadRef"
+          type="file"
+          accept="image/*"
+          style="display: none"
+          @change="handleFileInputChange"
+        />
+        <div class="upload-hint">
+          <span class="upload-icon">📷</span>
+          <p>支持 JPG、PNG、GIF 格式</p>
+          <p class="upload-size">图片大小不超过 5MB</p>
+        </div>
+      </div>
+    </div>
+
+    <template #footer>
+      <div class="dialog-footer">
+        <el-button @click="cancelUpload">取消</el-button>
+        <el-button type="primary" :loading="isUploading" @click="confirmUpload">
+          确认上传
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped lang="scss">
@@ -382,6 +536,28 @@ function cancelStreaming() {
   height: 34px;
   border-radius: 50%;
   font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: transform 0.2s;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  span {
+    line-height: 1;
+  }
 }
 
 .hero {
@@ -833,5 +1009,125 @@ function cancelStreaming() {
   .meal-grid { grid-template-columns: 1fr; }
   .days { overflow: auto; }
   .days button { flex-shrink: 0; }
+}
+</style>
+
+<!-- 全局样式 - 头像上传对话框 -->
+<style>
+.avatar-dialog .el-dialog {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.avatar-dialog .el-dialog__header {
+  background: linear-gradient(135deg, #4b8a73, #2d6a4f);
+  color: white;
+  padding: 20px;
+  margin: 0;
+}
+
+.avatar-dialog .el-dialog__title {
+  color: white;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.avatar-dialog .el-dialog__headerbtn .el-dialog__close {
+  color: white;
+}
+
+.avatar-dialog .el-dialog__body {
+  padding: 24px;
+}
+
+.avatar-upload-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.avatar-preview {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #f4f1ea;
+  border: 3px dashed #d8d5ce;
+}
+
+.preview-image {
+  width: 100%;
+  height: 100%;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.preview-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #98a59f;
+  font-size: 12px;
+  text-align: center;
+  padding: 10px;
+}
+
+.upload-zone {
+  border: 2px dashed #d8d5ce;
+  border-radius: 12px;
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #fafaf8;
+}
+
+.upload-zone:hover,
+.upload-zone.drag-over {
+  border-color: #4b8a73;
+  background: #f0f9f6;
+}
+
+.upload-zone.drag-over {
+  transform: scale(1.02);
+}
+
+.upload-hint .upload-icon {
+  font-size: 36px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.upload-hint p {
+  margin: 4px 0;
+  color: #687873;
+  font-size: 13px;
+}
+
+.upload-hint .upload-size {
+  font-size: 11px !important;
+  color: #98a59f !important;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.avatar-dialog .el-button--primary {
+  background: linear-gradient(135deg, #4b8a73, #2d6a4f);
+  border: none;
+}
+
+.avatar-dialog .el-button--primary:hover {
+  background: linear-gradient(135deg, #3d7a63, #1d5a4f);
 }
 </style>
