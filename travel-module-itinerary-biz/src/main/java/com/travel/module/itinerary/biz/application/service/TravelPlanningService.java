@@ -1,7 +1,7 @@
 package com.travel.module.itinerary.biz.application.service;
 
-import com.travel.agent.tool.PoiTool;
-import com.travel.agent.tool.WeatherTool;
+import com.travel.common.tool.PoiTool;
+import com.travel.common.tool.WeatherTool;
 import com.travel.module.itinerary.biz.api.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

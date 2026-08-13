@@ -7,6 +7,7 @@ import com.travel.mcp.client.McpSession;
 import com.travel.mcp.protocol.dto.McpToolResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -23,7 +24,7 @@ public class MealSubAgent {
 
     private final McpSession mealSession;
 
-    public MealSubAgent(@Qualifier("mealSession") McpSession mealSession) {
+    public MealSubAgent(@Lazy @Qualifier("mealSession") McpSession mealSession) {
         this.mealSession = mealSession;
     }
 

@@ -1,8 +1,8 @@
 package com.travel.agent.controller;
 
 import com.travel.agent.service.TravelPlanningService;
-import com.travel.agent.tool.PoiTool;
-import com.travel.agent.tool.WeatherTool;
+import com.travel.common.tool.PoiTool;
+import com.travel.common.tool.WeatherTool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -31,43 +31,26 @@ public class TravelAgentController {
             return Map.of("success", false, "message", "请求内容不能为空");
         }
 
-        try {
-            String result = travelPlanningService.generateItinerary(userRequest);
-            return Map.of("success", true, "data", result);
-        } catch (Exception e) {
-            log.error("生成行程失败", e);
-            return Map.of("success", false, "message", e.getMessage());
-        }
+        String result = travelPlanningService.generateItinerary(userRequest);
+        return Map.of("success", true, "data", result);
     }
 
     /**
      * 查询天气
      */
     @GetMapping("/weather")
-    public Map<String, Object> getWeather(@RequestParam String city) {
-        try {
-            WeatherTool.WeatherResponse response = travelPlanningService.getWeather(city);
-            return Map.of("success", response.isSuccess(), "data", response);
-        } catch (Exception e) {
-            log.error("查询天气失败", e);
-            return Map.of("success", false, "message", e.getMessage());
-        }
+    public WeatherTool.WeatherResponse getWeather(@RequestParam String city) {
+        return travelPlanningService.getWeather(city);
     }
 
     /**
      * 搜索POI
      */
     @GetMapping("/poi")
-    public Map<String, Object> searchPOI(
+    public PoiTool.AmapResponse searchPOI(
             @RequestParam String keywords,
             @RequestParam(required = false) String city) {
-        try {
-            PoiTool.AmapResponse response = travelPlanningService.searchPOI(keywords, city);
-            return Map.of("success", response.isSuccess(), "data", response);
-        } catch (Exception e) {
-            log.error("搜索POI失败", e);
-            return Map.of("success", false, "message", e.getMessage());
-        }
+        return travelPlanningService.searchPOI(keywords, city);
     }
 
     /**

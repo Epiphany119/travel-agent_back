@@ -12,6 +12,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -42,27 +43,21 @@ public class HostAgentService {
      * @param taskId  任务ID
      * @return SseEmitter
      */
-    public SseEmitter plan(TravelPlanRequest request, String taskId) {
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
-
+    @Async("taskExecutor")
+    public void plan(TravelPlanRequest request, String taskId, SseEmitter emitter) {
         // 设置完成和超时回调
         emitter.onCompletion(() -> log.info("SSE流完成: taskId={}", taskId));
         emitter.onTimeout(() -> log.warn("SSE流超时: taskId={}", taskId));
         emitter.onError(e -> log.error("SSE流异常: taskId={}", taskId, e));
 
-        // 异步执行，避免阻塞HTTP线程
-        new Thread(() -> {
-            try {
-                executePlan(request, taskId, emitter);
-            } catch (Exception e) {
-                log.error("执行行程规划异常: taskId={}", taskId, e);
-                sendError(emitter, e.getMessage());
-            } finally {
-                emitter.complete();
-            }
-        }).start();
-
-        return emitter;
+        try {
+            executePlan(request, taskId, emitter);
+        } catch (Exception e) {
+            log.error("执行行程规划异常: taskId={}", taskId, e);
+            sendError(emitter, e.getMessage());
+        } finally {
+            emitter.complete();
+        }
     }
 
     /**

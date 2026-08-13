@@ -9,6 +9,7 @@ import com.travel.module.user.biz.infra.persistence.JourneyImagePO;
 import com.travel.module.user.biz.infra.persistence.UserPreferencePO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.*;
 
@@ -121,5 +122,23 @@ public class UserApi {
         if (po.getUserId() == null) po.setUserId("user_001");
         userBizService.savePreference(po);
         return ApiResult.success("OK");
+    }
+
+    // ========== 头像上传 ==========
+    @PostMapping("/avatar")
+    public ApiResult<?> uploadAvatar(@RequestParam("file") MultipartFile file,
+                                    @RequestParam(defaultValue = "user_001") String userId) {
+        try {
+            String avatarUrl = userBizService.uploadAvatar(file, userId);
+            return ApiResult.success(Map.of("avatar", avatarUrl));
+        } catch (Exception e) {
+            return ApiResult.error("上传失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/avatar")
+    public ApiResult<?> getAvatar(@RequestParam(defaultValue = "user_001") String userId) {
+        String avatar = userBizService.getUserProfile(userId);
+        return ApiResult.success(Map.of("avatar", avatar != null ? avatar : ""));
     }
 }

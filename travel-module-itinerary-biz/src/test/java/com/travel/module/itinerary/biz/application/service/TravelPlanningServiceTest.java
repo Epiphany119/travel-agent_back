@@ -1,7 +1,7 @@
 package com.travel.module.itinerary.biz.application.service;
 
-import com.travel.agent.tool.PoiTool;
-import com.travel.agent.tool.WeatherTool;
+import com.travel.common.tool.PoiTool;
+import com.travel.common.tool.WeatherTool;
 import com.travel.module.itinerary.biz.api.dto.GenerateItineraryRequest;
 import com.travel.module.itinerary.biz.api.dto.TravelPlanResponse;
 import org.junit.jupiter.api.Test;

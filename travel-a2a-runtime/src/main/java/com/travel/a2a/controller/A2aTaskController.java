@@ -39,7 +39,9 @@ public class A2aTaskController {
         log.info("创建新任务并开始SSE流: taskId={}, destination={}, days={}",
                 taskId, request.getDestination(), request.getDays());
 
-        return hostAgentService.plan(request, taskId);
+        SseEmitter emitter = new SseEmitter(300_000L);
+        hostAgentService.plan(request, taskId, emitter);
+        return emitter;
     }
 
     /**
@@ -75,7 +77,8 @@ public class A2aTaskController {
                 taskId, request.getDestination(), request.getDays());
 
         // 启动异步任务
-        hostAgentService.plan(request, taskId);
+        SseEmitter emitter = new SseEmitter(300_000L);
+        hostAgentService.plan(request, taskId, emitter);
 
         return Map.of("taskId", taskId, "status", "created");
     }
@@ -103,6 +106,8 @@ public class A2aTaskController {
             request.setTravelStyle("休闲");
         }
 
-        return hostAgentService.plan(request, taskId);
+        SseEmitter emitter = new SseEmitter(300_000L);
+        hostAgentService.plan(request, taskId, emitter);
+        return emitter;
     }
 }

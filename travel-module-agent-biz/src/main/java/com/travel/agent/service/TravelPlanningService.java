@@ -2,8 +2,8 @@ package com.travel.agent.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.travel.agent.tool.PoiTool;
-import com.travel.agent.tool.WeatherTool;
+import com.travel.common.tool.PoiTool;
+import com.travel.common.tool.WeatherTool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.UserMessage;

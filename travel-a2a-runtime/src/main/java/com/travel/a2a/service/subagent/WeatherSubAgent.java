@@ -6,6 +6,7 @@ import com.travel.mcp.client.McpSession;
 import com.travel.mcp.protocol.dto.McpToolResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -19,7 +20,7 @@ public class WeatherSubAgent {
 
     private final McpSession weatherSession;
 
-    public WeatherSubAgent(@Qualifier("weatherSession") McpSession weatherSession) {
+    public WeatherSubAgent(@Lazy @Qualifier("weatherSession") McpSession weatherSession) {
         this.weatherSession = weatherSession;
     }
 

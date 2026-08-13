@@ -14,6 +14,7 @@ public class UserProfilePO {
     private String username;
     private String nickname;
     private String avatar;
+    private String avatarUrl;
     private String email;
     private String phone;
     private String bio;

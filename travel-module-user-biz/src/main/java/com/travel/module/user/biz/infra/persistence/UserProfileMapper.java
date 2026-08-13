@@ -14,8 +14,8 @@ public interface UserProfileMapper {
     @Select("SELECT * FROM user_profile WHERE id = #{id}")
     UserProfilePO findById(@Param("id") Long id);
     
-    @Insert("INSERT INTO user_profile (user_id, username, nickname, avatar, email, phone, bio) " +
-            "VALUES (#{userId}, #{username}, #{nickname}, #{avatar}, #{email}, #{phone}, #{bio})")
+    @Insert("INSERT INTO user_profile (user_id, username, nickname, avatar, avatar_url, email, phone, bio) " +
+            "VALUES (#{userId}, #{username}, #{nickname}, #{avatar}, #{avatarUrl}, #{email}, #{phone}, #{bio})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(UserProfilePO po);
     

@@ -41,7 +41,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResult<Void>> handleException(Exception ex) {
         log.error("系统异常", ex);
         return ResponseEntity
-                .status(HttpStatus.OK)
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResult.error(500, "系统异常: " + ex.getMessage()));
     }
 }

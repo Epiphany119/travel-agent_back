@@ -5,8 +5,11 @@ import com.travel.module.user.biz.infra.persistence.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -17,6 +20,7 @@ public class UserBizService {
     private final JourneyPointMapper journeyPointMapper;
     private final JourneyImageMapper journeyImageMapper;
     private final UserPreferenceMapper userPreferenceMapper;
+    private final UserProfileMapper userProfileMapper;
 
     // ========== 用户偏好 ==========
     public UserPreferencePO getPreference(String userId) {
@@ -124,6 +128,54 @@ public class UserBizService {
         for (JourneyImagePO img : images) {
             img.setJourneyId(journeyId);
             journeyImageMapper.insert(img);
+        }
+    }
+
+    // ========== 用户头像 ==========
+    public String getUserProfile(String userId) {
+        UserProfilePO profile = userProfileMapper.findByUserId(userId);
+        return profile != null ? profile.getAvatar() : null;
+    }
+
+    public String uploadAvatar(MultipartFile file, String userId) throws Exception {
+        // 保存文件到 uploads/avatar 目录
+        String fileName = file.getOriginalFilename();
+        String ext = fileName != null && fileName.contains(".") 
+            ? fileName.substring(fileName.lastIndexOf(".")) 
+            : ".jpg";
+        String newFileName = UUID.randomUUID().toString().replace("-", "") + ext;
+        
+        String uploadDir = System.getProperty("user.dir") + "/uploads/avatar/";
+        File dir = new File(uploadDir);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        
+        File dest = new File(uploadDir + newFileName);
+        file.transferTo(dest);
+        
+        // 生成访问URL
+        String avatarUrl = "/uploads/avatar/" + newFileName;
+        
+        // 更新数据库
+        UserProfilePO profile = new UserProfilePO();
+        profile.setUserId(userId);
+        profile.setUsername(userId);
+        profile.setAvatar(avatarUrl);
+        profile.setAvatarUrl(avatarUrl);
+        saveUserProfile(profile);
+        
+        return avatarUrl;
+    }
+
+    public void saveUserProfile(UserProfilePO po) {
+        UserProfilePO existing = userProfileMapper.findByUserId(po.getUserId());
+        if (existing != null) {
+            po.setId(existing.getId());
+            po.setCreatedAt(existing.getCreatedAt());
+            userProfileMapper.updateByUserId(po);
+        } else {
+            userProfileMapper.insert(po);
         }
     }
 }

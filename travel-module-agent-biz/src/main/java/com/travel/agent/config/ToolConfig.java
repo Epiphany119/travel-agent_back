@@ -9,7 +9,7 @@ import org.springframework.web.client.RestTemplate;
  *
  * <p>PR#1 调整：移除 {@code getWeatherSync} / {@code searchPoiSync} 这两个死方法
  * （项目中无人调用），对应的格式化辅助方法也一并删除；保留 {@code RestTemplate}
- * 供 {@link com.travel.agent.tool.WeatherTool} / {@link com.travel.agent.tool.PoiTool} 注入使用。</p>
+ * 供 {@link com.travel.common.tool.WeatherTool} / {@link com.travel.common.tool.PoiTool} 注入使用。</p>
  */
 @Configuration
 public class ToolConfig {

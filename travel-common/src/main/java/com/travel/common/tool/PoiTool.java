@@ -1,4 +1,4 @@
-package com.travel.agent.tool;
+package com.travel.common.tool;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.travel.common.exception.RateLimitException;
@@ -78,8 +78,8 @@ public class PoiTool implements Function<PoiTool.AmapRequest, PoiTool.AmapRespon
                 default -> AmapResponse.fallback("未知的操作类型: " + request.getAction());
             };
         } catch (RateLimitException e) {
-            log.warn("高德地图服务熔断: {}", e.getMessage());
-            return AmapResponse.fallback(e.getMessage());
+            // 不再吞异常，让 RateLimitException 向上传播到 GlobalExceptionHandler
+            throw e;
         } catch (Exception e) {
             log.error("高德地图API调用异常", e);
             return AmapResponse.fallback("API调用异常: " + e.getMessage());

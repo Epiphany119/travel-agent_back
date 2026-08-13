@@ -1,4 +1,4 @@
-package com.travel.agent.tool;
+package com.travel.common.tool;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.travel.common.exception.RateLimitException;
@@ -422,8 +422,8 @@ public class WeatherTool implements Function<WeatherTool.WeatherRequest, Weather
             acquireRateLimit();
             return fetchFromWttrIn(request.getCity());
         } catch (RateLimitException e) {
-            log.warn("天气服务熔断: {}", e.getMessage());
-            return WeatherResponse.fallback(e.getMessage());
+            // 不再吞异常，让 RateLimitException 向上传播到 GlobalExceptionHandler
+            throw e;
         } catch (Exception e) {
             log.error("wttr.in 天气查询失败: {}", e.getMessage(), e);
             return WeatherResponse.fallback("天气查询失败: " + e.getMessage());

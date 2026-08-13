@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -35,7 +37,6 @@ import java.util.concurrent.locks.ReentrantLock;
 @Service
 public class RateLimitService {
 
-    private static final String RATE_LIMIT_FILE = "data/rate-limit.json";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Value("${travel.ratelimit.enabled:true}")
@@ -46,6 +47,9 @@ public class RateLimitService {
 
     @Value("${travel.ratelimit.amap.limit:4700}")
     private int amapLimit;
+
+    @Value("${travel.ratelimit.data-path:data/rate-limit.json}")
+    private String dataPath;
 
     private final ObjectMapper objectMapper;
     private final ReentrantLock fileLock = new ReentrantLock();
@@ -171,7 +175,8 @@ public class RateLimitService {
     private void loadFromFile() {
         fileLock.lock();
         try {
-            File file = new File(RATE_LIMIT_FILE);
+            Path path = Paths.get(dataPath);
+            File file = path.toFile();
             if (file.exists()) {
                 try {
                     rateLimitData = objectMapper.readValue(file, RateLimitData.class);
@@ -196,7 +201,8 @@ public class RateLimitService {
     private void saveToFile() {
         fileLock.lock();
         try {
-            File file = new File(RATE_LIMIT_FILE);
+            Path path = Paths.get(dataPath);
+            File file = path.toFile();
             file.getParentFile().mkdirs();
             objectMapper.writeValue(file, rateLimitData);
             log.debug("熔断数据已保存到文件");

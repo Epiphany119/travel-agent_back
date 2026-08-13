@@ -7,6 +7,7 @@ import com.travel.mcp.client.McpSession;
 import com.travel.mcp.protocol.dto.McpToolResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -23,7 +24,7 @@ public class BudgetSubAgent {
 
     private final McpSession budgetSession;
 
-    public BudgetSubAgent(@Qualifier("budgetSession") McpSession budgetSession) {
+    public BudgetSubAgent(@Lazy @Qualifier("budgetSession") McpSession budgetSession) {
         this.budgetSession = budgetSession;
     }
 

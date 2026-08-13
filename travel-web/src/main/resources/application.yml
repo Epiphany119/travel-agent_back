@@ -11,6 +11,11 @@ spring:
   application:
     name: travel-agent-web
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+
   datasource:
     url: ${TRAVEL_DB_URL:jdbc:mysql://localhost:3306/travel_agent?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     driver-class-name: com.mysql.cj.jdbc.Driver
