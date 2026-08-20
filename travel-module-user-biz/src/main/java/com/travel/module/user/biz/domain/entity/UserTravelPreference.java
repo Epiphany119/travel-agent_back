@@ -12,7 +12,10 @@ import java.time.LocalDateTime;
 public class UserTravelPreference {
 
     private Long id;
-    
+
+    /** 用户名（侧边栏昵称来源） */
+    private String name;
+
     /** 用户唯一标识 */
     private String userId;
     

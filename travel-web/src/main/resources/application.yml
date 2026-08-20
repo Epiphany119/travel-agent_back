@@ -28,6 +28,10 @@ spring:
 
   # Spring AI 配置 (智谱GLM-4-Flash) - API Key 从 application-local.yaml 或 ENV 注入
   ai:
+    # 当前智谱 endpoint 在项目里 404，关闭重试让失败立刻回落到 deterministic 兜底解析，
+    # 避免每次回答都等待无谓的指数退避重试导致问卷“卡住”。
+    retry:
+      max-attempts: 1
     openai:
       api-key: ${ZHIPU_API_KEY:}
       base-url: https://open.bigmodel.cn/api/paas/v4

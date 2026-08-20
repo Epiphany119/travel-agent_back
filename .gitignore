@@ -45,3 +45,6 @@ application-local.yml
 # Data / runtime
 data/*.json
 data/*.json.tmp
+
+# Local uploads (stored in user.home, not in project directory)
+uploads/

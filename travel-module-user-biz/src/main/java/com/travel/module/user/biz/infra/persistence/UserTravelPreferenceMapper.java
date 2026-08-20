@@ -11,7 +11,7 @@ public interface UserTravelPreferenceMapper {
     
     @Select("SELECT * FROM user_travel_preference WHERE user_id = #{userId} AND preference_type = #{preferenceType} LIMIT 1")
     UserTravelPreferencePO findByUserIdAndType(@Param("userId") String userId, @Param("preferenceType") String preferenceType);
-    
+
     @Select("SELECT * FROM user_travel_preference WHERE user_id = #{userId}")
     List<UserTravelPreferencePO> findByUserId(@Param("userId") String userId);
     
@@ -19,13 +19,13 @@ public interface UserTravelPreferenceMapper {
     UserTravelPreferencePO findById(@Param("id") Long id);
     
     @Insert("INSERT INTO user_travel_preference (" +
-            "user_id, preference_type, preference_name, favorite_destinations, preferred_season, " +
+            "user_id, name, preference_type, favorite_destinations, preferred_season, " +
             "budget_level, daily_budget_min, daily_budget_max, travel_style, interests, " +
             "dietary_requirements, preferred_cuisines, accommodation_type, accommodation_requirements, " +
             "transportation_preference, travel_companion, has_children, children_ages, " +
             "activity_level, pace_preference, mobility_requirements, special_requests" +
             ") VALUES (" +
-            "#{userId}, #{preferenceType}, #{preferenceName}, #{favoriteDestinations}, #{preferredSeason}, " +
+            "#{userId}, #{name}, #{preferenceType}, #{favoriteDestinations}, #{preferredSeason}, " +
             "#{budgetLevel}, #{dailyBudgetMin}, #{dailyBudgetMax}, #{travelStyle}, #{interests}, " +
             "#{dietaryRequirements}, #{preferredCuisines}, #{accommodationType}, #{accommodationRequirements}, " +
             "#{transportationPreference}, #{travelCompanion}, #{hasChildren}, #{childrenAges}, " +
@@ -33,9 +33,9 @@ public interface UserTravelPreferenceMapper {
             ")")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(UserTravelPreferencePO po);
-    
+
     @Update("UPDATE user_travel_preference SET " +
-            "preference_name = #{preferenceName}, " +
+            "name = #{name}, " +
             "favorite_destinations = #{favoriteDestinations}, " +
             "preferred_season = #{preferredSeason}, " +
             "budget_level = #{budgetLevel}, " +

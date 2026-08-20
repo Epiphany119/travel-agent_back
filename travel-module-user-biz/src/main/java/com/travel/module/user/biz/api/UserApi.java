@@ -124,6 +124,23 @@ public class UserApi {
         return ApiResult.success("OK");
     }
 
+    // ========== 用户昵称（从 user_travel_preference.preference_name 读取） ==========
+    @GetMapping("/nickname")
+    public ApiResult<?> getNickname(@RequestParam(defaultValue = "user_001") String userId) {
+        return ApiResult.success(Map.of("nickname", userBizService.getUserNickname(userId)));
+    }
+
+    @PutMapping("/nickname")
+    public ApiResult<?> updateNickname(@RequestParam(defaultValue = "user_001") String userId,
+                                        @RequestBody Map<String, String> body) {
+        String nickname = body.get("nickname");
+        if (nickname == null || nickname.isBlank()) {
+            return ApiResult.error("昵称不能为空");
+        }
+        userBizService.updateNickname(userId, nickname);
+        return ApiResult.success("OK");
+    }
+
     // ========== 头像上传 ==========
     @PostMapping("/avatar")
     public ApiResult<?> uploadAvatar(@RequestParam("file") MultipartFile file,
@@ -140,5 +157,27 @@ public class UserApi {
     public ApiResult<?> getAvatar(@RequestParam(defaultValue = "user_001") String userId) {
         String avatar = userBizService.getUserProfile(userId);
         return ApiResult.success(Map.of("avatar", avatar != null ? avatar : ""));
+    }
+
+    // ========== 地理编码（景点名称 → 经纬度） ==========
+    @GetMapping("/geocode")
+    public ApiResult<?> geocode(@RequestParam String address) {
+        return ApiResult.success(userBizService.geocodeAddress(address));
+    }
+
+    // ========== 通用图片上传 ==========
+    // 支持灵感目的地、旅程等模块的图片上传
+    // category 可选值: inspiration, journey, general
+    @PostMapping("/upload")
+    public ApiResult<?> uploadImage(@RequestParam("file") MultipartFile file,
+                                   @RequestParam(defaultValue = "general") String category) {
+        try {
+            String imageUrl = userBizService.uploadImage(file, category);
+            return ApiResult.success(Map.of("url", imageUrl));
+        } catch (IllegalArgumentException e) {
+            return ApiResult.error(e.getMessage());
+        } catch (Exception e) {
+            return ApiResult.error("上传失败: " + e.getMessage());
+        }
     }
 }

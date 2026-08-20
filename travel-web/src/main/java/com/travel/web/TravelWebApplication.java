@@ -14,9 +14,11 @@ import org.springframework.context.annotation.ComponentScan;
  * {@code agent.biz.infra.persistence} / {@code itinerary.biz.infra.persistence}
  * 等多层级包路径，避免误扫到 {@code common} 等非持久层包。</p>
  */
-@SpringBootApplication
+@SpringBootApplication(exclude = {
+        org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration.class
+})
 @ComponentScan(basePackages = "com.travel")
-@MapperScan(basePackages = "com.travel.module.**.infra.persistence")
+@MapperScan(basePackages = {"com.travel.module.**.infra.persistence", "com.travel.agent.persistence"})
 public class TravelWebApplication {
 
     public static void main(String[] args) {

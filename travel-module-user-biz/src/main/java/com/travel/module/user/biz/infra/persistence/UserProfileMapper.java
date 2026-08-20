@@ -22,6 +22,7 @@ public interface UserProfileMapper {
     @Update("UPDATE user_profile SET " +
             "nickname = #{nickname}, " +
             "avatar = #{avatar}, " +
+            "avatar_url = #{avatarUrl}, " +
             "email = #{email}, " +
             "phone = #{phone}, " +
             "bio = #{bio} " +

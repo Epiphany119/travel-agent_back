@@ -374,3 +374,23 @@ CREATE TABLE `travel_plan_history` (
   KEY `idx_plan_id` (`plan_id`),
   KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='历史规划记录表';
+
+-- ----------------------------
+-- 16. Agent 问卷会话表（流式问答 → 缓存 → 输出计划）
+-- ----------------------------
+DROP TABLE IF EXISTS `agent_questionnaire`;
+CREATE TABLE `agent_questionnaire` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `session_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '会话ID',
+  `user_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'user_001' COMMENT '用户唯一标识',
+  `current_step` int NOT NULL DEFAULT '0' COMMENT '当前提问步骤索引',
+  `answers` json DEFAULT NULL COMMENT '已收集的用户回答(规范化后)',
+  `data_cache` json DEFAULT NULL COMMENT 'API数据缓存(天气/景点等)',
+  `status` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active' COMMENT '状态: active-进行中, completed-已完成',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `session_id` (`session_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent问卷会话表';

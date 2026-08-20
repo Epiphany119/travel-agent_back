@@ -22,11 +22,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // 配置 /uploads/** 路径映射到服务器文件系统目录
-        String userDir = System.getProperty("user.dir");
-        String avatarPath = userDir + "/uploads/avatar/";
-        
-        registry.addResourceHandler("/uploads/avatar/**")
-                .addResourceLocations("file:" + avatarPath);
+        // 配置 /uploads/** 路径映射到用户家目录下的 travel-agent-uploads 目录
+        // 支持 avatar, inspiration, journey 等所有子目录
+        String uploadPath = System.getProperty("user.home") + "/travel-agent-uploads/";
+
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + uploadPath);
     }
 }

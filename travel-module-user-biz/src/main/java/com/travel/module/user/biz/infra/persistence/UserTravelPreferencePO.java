@@ -12,6 +12,7 @@ public class UserTravelPreferencePO {
     
     private Long id;
     private String userId;
+    private String name;
     private String preferenceType;
     private String preferenceName;
     
@@ -63,6 +64,7 @@ public class UserTravelPreferencePO {
         return UserTravelPreference.builder()
                 .id(id)
                 .userId(userId)
+                .name(name)
                 .preferenceType(preferenceType)
                 .preferenceName(preferenceName)
                 .favoriteDestinations(favoriteDestinations)
@@ -96,6 +98,7 @@ public class UserTravelPreferencePO {
         UserTravelPreferencePO po = new UserTravelPreferencePO();
         po.setId(entity.getId());
         po.setUserId(entity.getUserId());
+        po.setName(entity.getName());
         po.setPreferenceType(entity.getPreferenceType());
         po.setPreferenceName(entity.getPreferenceName());
         po.setFavoriteDestinations(entity.getFavoriteDestinations());
