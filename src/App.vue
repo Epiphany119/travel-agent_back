@@ -1,11 +1,41 @@
 <template>
-  <router-view />
+  <div class="app-layout">
+    <AppSidebar />
+    <div class="app-main">
+      <AppHeader />
+      <router-view />
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
+import AppSidebar from '@/components/AppSidebar.vue'
+import AppHeader from '@/components/AppHeader.vue'
 </script>
 
 <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap');
+
+/* ─── Roamly Design Tokens ─────────────────────────────────────── */
+:root {
+  --forest: #164E42;        /* Primary · Forest Green   */
+  --forest-deep: #0E382E;   /* Primary deep             */
+  --roam: #4F8F78;          /* Secondary · Roam Green   */
+  --roam-soft: #E9F1EC;     /* Roam 8% surface          */
+  --sunset: #F27A4F;        /* Accent · Sunset Orange   */
+  --sunset-soft: #FDEEE6;   /* Sunset surface           */
+  --paper: #F7F3EA;         /* Background · Paper       */
+  --card: #FFFDF8;          /* Card surface             */
+  --wash: #F2EDE1;          /* Sunken wash              */
+  --ink: #1D2B27;           /* Primary text             */
+  --ink-2: #5C6B65;         /* Secondary text           */
+  --ink-3: #8C9993;         /* Tertiary text            */
+  --line: #E7E0D2;          /* Hairline border          */
+  --shadow-soft: 0 2px 12px rgba(22, 78, 66, 0.06);
+  --shadow-lift: 0 12px 30px rgba(22, 78, 66, 0.10);
+  --radius-card: 24px;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -14,6 +44,40 @@
 
 html, body, #app {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Manrope, "Noto Sans SC", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Element Plus 主色对齐品牌色 */
+.el-button--primary {
+  --el-button-bg-color: var(--forest);
+  --el-button-border-color: var(--forest);
+  --el-button-hover-bg-color: var(--roam);
+  --el-button-hover-border-color: var(--roam);
+  --el-button-active-bg-color: var(--forest-deep);
+  --el-button-active-border-color: var(--forest-deep);
+}
+
+/* 滚动条统一风格 */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #D8D1C0; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #C4BCA8; }
+::-webkit-scrollbar-track { background: transparent; }
 </style>

@@ -7,7 +7,8 @@ const router = createRouter({
     { path: '/profile', name: 'Profile', component: () => import('@/views/UserProfile.vue') },
     { path: '/inspirations', name: 'Inspirations', component: () => import('@/views/InspirationView.vue') },
     { path: '/journeys', name: 'Journeys', component: () => import('@/views/JourneyView.vue') },
-    { path: '/journey-map', name: 'JourneyMap', component: () => import('@/views/JourneyMapView.vue') }
+    { path: '/journey-map', name: 'JourneyMap', component: () => import('@/views/JourneyMapView.vue') },
+    { path: '/agent-panel', name: 'AgentPanel', component: () => import('@/views/AgentPanel.vue') }
   ]
 })
 

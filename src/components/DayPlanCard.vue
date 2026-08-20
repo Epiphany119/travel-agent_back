@@ -81,7 +81,7 @@ defineProps<{ plan: DayPlan }>()
 }
 
 .plan-slot--evening {
-  background: #f0f4ff;
+  background: var(--roam-soft);
 }
 
 .slot-label {

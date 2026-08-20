@@ -46,3 +46,7 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# 禁止提交与 .ts 源文件同名的就地编译产物（防止重演 .js 覆盖导出 bug）
+src/**/*.js
+src/**/*.js.map

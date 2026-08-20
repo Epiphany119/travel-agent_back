@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { subscribeA2AStream, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
 import { useUserStore } from '@/stores/user'
 import DayPlanCard from '@/components/DayPlanCard.vue'
+import roamlySymbol from '@/assets/brand/logo-app-icon.png'
 
+const router = useRouter()
 const streamStore = useStreamStore()
 const userStore = useUserStore()
+
+function scrollToPlanner() {
+  document.getElementById('planner')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const destination = ref('杭州')
 const days = ref(3)
@@ -50,35 +57,126 @@ async function generateStream() {
   }, (event) => {
     switch (event.name) {
       case 'task_update':
-        // 任务状态更新，可忽略或展示
+        // 任务状态更新
+        console.log('[Plan] task_update:', event.data)
         break
       case 'tool_call':
         streamStore.toolCalls.push({
-          name: event.data?.source || '未知工具',
+          name: event.data?.source || event.data?.name || '未知工具',
           args: event.data
         })
         break
       case 'tool_result':
-        streamStore.currentToolResult = event.data?.message || event.data?.type || '完成'
+        streamStore.currentToolResult = event.data?.message || event.data?.summary || event.data?.type || '完成'
         break
       case 'token':
         if (typeof event.data === 'string') {
           streamStore.fullText += event.data
+        } else if (event.data && typeof event.data === 'object') {
+          // 如果后端发的是 {delta: "..."} 格式
+          streamStore.fullText += event.data.delta || event.data.content || ''
         }
         break
       case 'task_done':
-        streamStore.planId = event.data?.planId || null
+        console.log('[Plan] task_done received:', event.data)
+        // 后端返回 TravelPlanResult，提取 dayPlans 并构造 travelPlan
+        const result = event.data
+        if (result && typeof result === 'object') {
+          const backendDays = result.dayPlans || []
+          
+          // === 映射 1: 给 streamStore.dayPlans (DayPlanCard 组件使用) ===
+          // DayPlanCard 需要 { morning, afternoon, evening } 结构
+          const streamDayPlans = backendDays.map((dp: any) => {
+            const activities = dp.activities || []
+            const morningAct = activities.find((a: any) => a.type === 'sightseeing' && (a.time?.startsWith('0') || a.time?.startsWith('1')))
+            const afternoonAct = activities.find((a: any) => a.type === 'sightseeing' && (a.time?.startsWith('1') || a.time?.startsWith('2')))
+            const eveningAct = activities.find((a: any) => a.type === 'rest' || a.type === 'meal')
+            
+            const mkSlot = (act: any) => act ? {
+              plan: `${act.name}${act.location ? ' @ ' + act.location : ''}${act.notes ? ' - ' + act.notes : ''}`,
+              duration: act.duration ? Math.round(act.duration / 60) + '小时' : '1小时',
+              tips: act.notes || '',
+              budget: Math.round(act.cost || 0)
+            } : undefined
+            
+            return {
+              dayNumber: dp.day || 0,
+              theme: morningAct?.name || afternoonAct?.name || `第${dp.day}天`,
+              date: dp.date || '',
+              morning: mkSlot(morningAct),
+              afternoon: mkSlot(afternoonAct),
+              evening: mkSlot(eveningAct),
+              tips: dp.weather ? `天气: ${dp.weather} ${dp.temperature || ''}` : ''
+            }
+          })
+          
+          // === 映射 2: 给 travelPlan.dayPlans (传统详情页使用) ===
+          const detailDayPlans = backendDays.map((dp: any) => ({
+            dayNumber: dp.day || 0,
+            date: dp.date || '',
+            theme: dp.activities?.find((a: any) => a.type === 'sightseeing')?.name || `第${dp.day}天`,
+            dayBudget: dp.dailyBudget || 0,
+            transportation: '',
+            notes: dp.weather || '',
+            attractions: (dp.activities || [])
+              .filter((a: any) => a.type === 'sightseeing')
+              .map((a: any) => ({
+                name: a.name || '',
+                description: a.notes || a.location || '',
+                duration: Math.round((a.duration || 0) / 60),
+                ticketPrice: Math.round(a.cost || 0)
+              })),
+            meals: (dp.activities || [])
+              .filter((a: any) => a.type === 'meal')
+              .map((a: any) => ({
+                mealType: getMealType(a.time),
+                restaurantName: a.name || '',
+                cuisine: a.notes || '',
+                avgPrice: Math.round(a.cost || 0),
+                reason: a.notes || ''
+              }))
+          }))
+
+          // 填充 streamStore (供 DayPlanCard 使用)
+          streamStore.dayPlans = streamDayPlans
+          
+          // 填充前端 travelPlan (供传统详情页使用)
+          travelPlan.value = {
+            planId: result.success ? 'plan_' + Date.now() : '',
+            destination: destination.value,
+            days: days.value,
+            totalBudget: result.budget?.totalBudget || budget.value,
+            estimatedCost: result.budget?.totalBudget || budget.value,
+            budgetStatus: result.budget?.success ? 'ok' : 'limited',
+            overview: result.finalPlan || streamStore.fullText,
+            travelTips: [],
+            packingList: [],
+            dayPlans: detailDayPlans
+          }
+        }
         streamStore.isStreaming = false
         ElMessage.success('行程规划完成！')
         break
       case 'error':
+        console.error('[Plan] error:', event.data)
         streamStore.error = event.data?.message || '未知错误'
         streamStore.isStreaming = false
         break
       default:
+        console.log('[Plan] unknown event:', event.name, event.data)
         break
     }
   })
+
+// 辅助函数：根据时间推断餐段
+function getMealType(time: string): string {
+  if (!time) return '餐饮'
+  const h = parseInt(time.split(':')[0])
+  if (h < 10) return '早餐'
+  if (h < 14) return '午餐'
+  if (h < 17) return '下午茶'
+  return '晚餐'
+}
 }
 
 function cancelStreaming() {
@@ -93,22 +191,15 @@ function cancelStreaming() {
 
 <template>
   <main class="app-shell">
-    <nav class="topbar">
-      <a class="brand"><span>✦</span> roamly</a>
-      <div class="nav-links">
-        <a @click="$router.push('/inspirations')">灵感目的地</a>
-        <a @click="$router.push('/journeys')">我的旅程</a>
-        <button class="avatar" @click="$router.push('/profile')">
-          <img v-if="userStore.avatar" :src="userStore.avatar" alt="头像" />
-          <span v-else>{{ userStore.nickname }}</span>
-        </button>
-      </div>
-    </nav>
-
     <section class="hero">
+      <img class="hero-logo" :src="roamlySymbol" alt="Roamly" />
       <p class="eyebrow">TRAVEL, THOUGHTFULLY</p>
       <h1>把期待，变成一趟<br><em>刚刚好的旅行。</em></h1>
       <p class="sub">告诉我目的地、时间和预算。Roamly 会把复杂的功课，整理成可以立刻出发的每一天。</p>
+      <div class="hero-actions">
+        <button class="btn-primary" @click="scrollToPlanner">开始规划</button>
+        <button class="btn-ghost" @click="router.push('/inspirations')">探索灵感</button>
+      </div>
       <div class="trust">
         <span>✦ 路线按区域串联</span>
         <span>◌ 预算清晰可控</span>
@@ -116,7 +207,7 @@ function cancelStreaming() {
       </div>
     </section>
 
-    <section class="planner-card">
+    <section id="planner" class="planner-card">
       <div class="planner-title">
         <div>
           <p class="eyebrow">START PLANNING</p>
@@ -212,9 +303,9 @@ function cancelStreaming() {
     >
       <div class="result-head">
         <div>
-          <p class="eyebrow">STREAMING OUTPUT</p>
+          <p class="eyebrow">{{ streamStore.isStreaming ? 'STREAMING OUTPUT' : 'YOUR ITINERARY' }}</p>
           <h2>{{ destination }} · {{ days }} 天旅程</h2>
-          <p>AI 实时生成中，请稍候…</p>
+          <p>{{ streamStore.isStreaming ? 'AI 实时生成中，请稍候…' : 'AI 已为你生成完整行程' }}</p>
         </div>
         <div class="budget">
           <span>预算</span>
@@ -234,15 +325,9 @@ function cancelStreaming() {
             :key="idx"
             class="tool-calling"
           >
-            <span class="tool-badge tool-badge--calling">
-              <span class="loading-dot"></span>
-              🔧 调用中: {{ tool.name }}
-            </span>
-            <span
-              v-if="streamStore.currentToolResult && idx === streamStore.toolCalls.length - 1"
-              class="tool-badge tool-badge--done"
-            >
-              ✅ {{ streamStore.currentToolResult }}
+            <span :class="['tool-badge', streamStore.isStreaming ? 'tool-badge--calling' : 'tool-badge--done']">
+              <span v-if="streamStore.isStreaming" class="loading-dot"></span>
+              {{ streamStore.isStreaming ? '🔧 调用中' : '✅ 已完成' }}: {{ tool.name }}
             </span>
           </div>
         </div>
@@ -348,79 +433,22 @@ function cancelStreaming() {
 </template>
 
 <style scoped lang="scss">
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap');
-
 :global(*) { box-sizing: border-box; }
-:global(body) { margin: 0; background: #f4f1ea; color: #172c29; font-family: Manrope, "Noto Sans SC", sans-serif; }
 
 .app-shell {
-  min-height: 100vh;
   padding-bottom: 80px;
   background: radial-gradient(circle at 86% 5%, #d8ede2 0, transparent 23rem),
               radial-gradient(circle at 5% 30%, #fff7e4 0, transparent 24rem);
 }
 
-.topbar {
-  height: 74px;
-  width: min(1160px, calc(100% - 40px));
-  margin: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.brand { font: 32px "DM Serif Display"; letter-spacing: -1px; }
-.brand span { color: #ee7348; font-size: 27px; }
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #61716b;
-}
-
-.avatar {
-  border: 0;
-  background: #193d35;
-  color: #fff;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  font-weight: 800;
-  cursor: pointer;
-  padding: 0;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  transition: transform 0.2s;
-
-  &:hover {
-    transform: scale(1.05);
-  }
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  span {
-    line-height: 1;
-  }
-}
-
 .hero {
   width: min(860px, calc(100% - 40px));
   text-align: center;
-  padding: 70px 0 45px;
+  padding: 40px 0 45px;
 }
 
 .eyebrow {
-  color: #d86a43;
+  color: var(--sunset);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.18em;
@@ -433,7 +461,7 @@ function cancelStreaming() {
   margin: 0;
 }
 
-.hero h1 em { font-style: normal; color: #4b8a73; }
+.hero h1 em { font-style: normal; color: var(--roam); }
 
 .sub {
   max-width: 560px;
@@ -450,16 +478,59 @@ function cancelStreaming() {
   color: #587368;
   font-size: 11px;
   font-weight: 700;
-  margin-top: 24px;
+  margin-top: 28px;
+}
+
+/* Hero 品牌与双按钮 */
+.hero-logo {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 16px;
+}
+
+.hero-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.btn-primary {
+  border: 0;
+  background: var(--forest);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 14px 36px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(22, 78, 66, 0.22);
+  transition: background 0.2s, transform 0.2s;
+
+  &:hover { background: var(--roam); transform: translateY(-1px); }
+}
+
+.btn-ghost {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--forest);
+  font-weight: 800;
+  font-size: 14px;
+  padding: 14px 36px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover { background: var(--roam-soft); }
 }
 
 .planner-card, .result {
   width: min(1020px, calc(100% - 40px));
   margin: auto;
-  background: #fffefa;
-  border: 1px solid #e7e1d5;
-  border-radius: 27px;
-  box-shadow: 0 20px 55px #293d3210;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow-soft);
 }
 
 .planner-card { padding: 34px 38px; }
@@ -481,7 +552,7 @@ function cancelStreaming() {
 }
 
 .field {
-  border: 1px solid #e4e4dd;
+  border: 1px solid var(--line);
   border-radius: 13px;
   padding: 10px 14px;
   display: block;
@@ -500,7 +571,7 @@ function cancelStreaming() {
   border: 0;
   background: transparent;
   font: 700 16px Manrope;
-  color: #193d35;
+  color: var(--ink);
   outline: 0;
 }
 
@@ -516,7 +587,7 @@ function cancelStreaming() {
   border-radius: 7px;
   width: 22px;
   height: 22px;
-  color: #37705d;
+  color: var(--roam);
   font-size: 16px;
   cursor: pointer;
 }
@@ -524,7 +595,7 @@ function cancelStreaming() {
 .number-control b { font-size: 14px; }
 
 .choice-row {
-  border-top: 1px solid #eee9df;
+  border-top: 1px solid var(--line);
   padding-top: 21px;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -534,19 +605,19 @@ function cancelStreaming() {
 .chips { display: flex; gap: 7px; flex-wrap: wrap; }
 
 .chips button {
-  border: 1px solid #e4e4dd;
+  border: 1px solid var(--line);
   background: white;
   padding: 7px 11px;
-  border-radius: 20px;
+  border-radius: 24px;
   color: #66756f;
   font-size: 12px;
   cursor: pointer;
 }
 
 .chips button.selected {
-  background: #183d34;
+  background: var(--forest);
   color: white;
-  border-color: #183d34;
+  border-color: var(--forest);
 }
 
 .generate-row {
@@ -573,9 +644,9 @@ function cancelStreaming() {
 .generate i { font-size: 24px; font-style: normal; }
 
 .generate--stream {
-  background: linear-gradient(135deg, #4b8a73, #2d6a4f);
+  background: var(--forest);
   color: white;
-  box-shadow: 0 10px 20px #2d6a4f40;
+  box-shadow: 0 8px 18px rgba(22,78,66,.22);
 }
 
 .generate--cancel {
@@ -586,9 +657,9 @@ function cancelStreaming() {
 }
 
 .generate--retry {
-  background: #ec7249;
+  background: var(--sunset);
   color: white;
-  box-shadow: 0 10px 20px #ec724940;
+  box-shadow: 0 8px 18px rgba(242,122,79,.28);
   flex: 0;
   min-width: 120px;
 }
@@ -606,8 +677,8 @@ function cancelStreaming() {
 .result { margin-top: 25px; padding: 35px 38px; }
 
 .stream-result {
-  border: 2px dashed #4b8a73;
-  background: #f0faf6;
+  border: 2px dashed var(--roam);
+  background: var(--roam-soft);
 }
 
 .result-head > div > p:not(.eyebrow) {
@@ -619,19 +690,19 @@ function cancelStreaming() {
 
 .budget {
   min-width: 190px;
-  background: #eef6ed;
+  background: var(--roam-soft);
   padding: 17px;
   border-radius: 15px;
 }
 
 .budget span, .budget small { display: block; font-size: 11px; color: #6f847b; }
-.budget b { display: block; font: 27px "DM Serif Display"; color: #1e5d48; margin: 4px 0; }
+.budget b { display: block; font: 27px "DM Serif Display"; color: var(--forest); margin: 4px 0; }
 
 .days { display: flex; gap: 8px; margin: 28px 0 16px; }
 
 .days button {
   border: 0;
-  background: #f1f0ea;
+  background: var(--wash);
   border-radius: 11px;
   padding: 9px 17px;
   color: #788780;
@@ -641,17 +712,17 @@ function cancelStreaming() {
 .days small, .days b { display: block; }
 .days small { font-size: 8px; letter-spacing: 0.1em; }
 .days b { font-size: 18px; }
-.days button.active { background: #1c473c; color: white; }
+.days button.active { background: var(--forest); color: white; }
 
 .day-card {
-  border: 1px solid #e8e6dc;
+  border: 1px solid var(--line);
   border-radius: 18px;
   padding: 25px;
 }
 
-.day-title p { color: #d36a45; font-size: 11px; font-weight: 800; margin: 0; }
+.day-title p { color: var(--sunset); font-size: 11px; font-weight: 800; margin: 0; }
 .day-title h3 { margin: 7px 0; font-size: 21px; }
-.day-title > b { font-size: 13px; color: #41836a; }
+.day-title > b { font-size: 13px; color: var(--roam); }
 
 .timeline { padding: 20px 0 7px; }
 
@@ -666,8 +737,8 @@ function cancelStreaming() {
 .timeline-item > span {
   width: 25px;
   height: 25px;
-  background: #dcece0;
-  color: #287055;
+  background: var(--roam-soft);
+  color: var(--roam);
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -677,24 +748,24 @@ function cancelStreaming() {
 
 .timeline-item h4, .meal h4 { margin: 0 0 5px; font-size: 14px; }
 .timeline-item p, .meal p { margin: 0; color: #6e7d77; font-size: 12px; line-height: 1.6; }
-.timeline-item small, .meal small { color: #a06445; font-size: 11px; }
+.timeline-item small, .meal small { color: var(--sunset); font-size: 11px; }
 
 .meal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 .meal {
-  background: #fbf4ea;
+  background: var(--sunset-soft);
   border-radius: 12px;
   padding: 15px;
 }
 
-.meal > span { font-size: 10px; font-weight: 800; color: #d36a45; }
+.meal > span { font-size: 10px; font-weight: 800; color: var(--sunset); }
 
 .notice {
   font-size: 11px;
   line-height: 1.7;
   color: #62746d;
   margin: 20px 0 0;
-  background: #f4f8f5;
+  background: var(--roam-soft);
   padding: 12px;
   border-radius: 9px;
 }
@@ -706,8 +777,8 @@ function cancelStreaming() {
 .packing { display: flex; flex-wrap: wrap; gap: 8px; }
 .packing span {
   font-size: 11px;
-  background: #eef6ed;
-  color: #34745b;
+  background: var(--roam-soft);
+  color: var(--roam);
   border-radius: 15px;
   padding: 6px 9px;
 }
@@ -717,9 +788,9 @@ function cancelStreaming() {
 .stream-container {
   padding: 20px 24px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #f8faff, #f0f4ff);
+  background: linear-gradient(135deg, var(--card), var(--roam-soft));
   margin-top: 20px;
-  border: 1px solid #d0e8ff;
+  border: 1px solid #DCE8E2;
 }
 
 .stream-text {
@@ -747,7 +818,7 @@ function cancelStreaming() {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  border-radius: 20px;
+  border-radius: 24px;
   font-size: 13px;
 }
 
@@ -785,8 +856,8 @@ function cancelStreaming() {
 .stream-error {
   margin-top: 16px;
   padding: 14px 18px;
-  background: #fef0f0;
-  border: 1px solid #f5c6cb;
+  background: var(--sunset-soft);
+  border: 1px solid #F2C4B4;
   border-radius: 8px;
   color: #c0392b;
   font-size: 14px;
@@ -798,7 +869,7 @@ function cancelStreaming() {
   padding: 25px;
   background: #fff;
   border-radius: 18px;
-  border: 1px solid #e8e6dc;
+  border: 1px solid var(--line);
   line-height: 1.8;
   font-size: 14px;
   color: #333;
@@ -807,7 +878,7 @@ function cancelStreaming() {
 .ai-content :deep(h1),
 .ai-content :deep(h2),
 .ai-content :deep(h3) {
-  color: #1c473c;
+  color: var(--forest);
   margin: 1em 0 0.5em;
   font-weight: 700;
 }
@@ -823,10 +894,10 @@ function cancelStreaming() {
 
 .ai-content :deep(li) { margin: 0.4em 0; }
 
-.ai-content :deep(strong) { color: #d36a45; font-weight: 600; }
+.ai-content :deep(strong) { color: var(--sunset); font-weight: 600; }
 
 .ai-content :deep(code) {
-  background: #f4f8f5;
+  background: var(--roam-soft);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 13px;
@@ -842,16 +913,14 @@ function cancelStreaming() {
 }
 
 .ai-content :deep(blockquote) {
-  border-left: 4px solid #ec7249;
+  border-left: 4px solid var(--sunset);
   margin: 1em 0;
   padding: 10px 16px;
-  background: #fff7f4;
+  background: var(--sunset-soft);
   color: #66756f;
 }
 
 @media (max-width: 700px) {
-  .topbar { width: calc(100% - 26px); }
-  .nav-links a { display: none; }
   .hero { padding: 45px 0 30px; }
   .hero h1 { font-size: 39px; }
   .trust { gap: 9px; font-size: 9px; }
