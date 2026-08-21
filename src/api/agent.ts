@@ -70,6 +70,21 @@ export function generateTravelPlan(data: TravelPlanRequest) {
   return request.post<any, { code: number; data: TravelPlan }>('/travel-plans/generate', data)
 }
 
+// ─── 地点/餐厅图片 ───────────────────────────────────────────────────────────
+export interface PoiImageResponse {
+  name: string
+  city: string
+  imageUrls: string[]
+}
+
+/**
+ * 按地点/餐厅名称获取高德官方图片（后端做 搜索→id→详情照片）
+ * 返回响应体（axios 拦截器已解包 response.data）
+ */
+export function fetchPoiImages(name: string, city?: string): Promise<PoiImageResponse> {
+  return request.get<any, PoiImageResponse>('/poi/image', { params: { name, city } })
+}
+
 // ─── SSE 流式订阅 ────────────────────────────────────────────────────────────
 
 export interface StreamTokenEvent {

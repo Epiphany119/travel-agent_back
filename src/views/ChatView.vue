@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
-import { subscribeA2AStream, type TravelPlan } from '@/api/agent'
+import { subscribeA2AStream, fetchPoiImages, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
 import { useUserStore } from '@/stores/user'
 import roamlySymbol from '@/assets/brand/logo-app-icon.png'
@@ -11,6 +11,27 @@ import roamlySymbol from '@/assets/brand/logo-app-icon.png'
 const router = useRouter()
 const streamStore = useStreamStore()
 const userStore = useUserStore()
+
+// 地点/餐厅图片懒加载缓存（按名称）
+const imageMap = reactive(new Map<string, string[]>())
+const imagePending = reactive(new Map<string, boolean>())
+function loadImages(name: string, city: string) {
+  if (!name || imagePending.get(name) || imageMap.has(name)) return
+  imagePending.set(name, true)
+  fetchPoiImages(name, city)
+    .then((res) => { imageMap.set(name, res?.imageUrls || []) })
+    .catch(() => { imageMap.set(name, []) })
+    .finally(() => imagePending.set(name, false))
+}
+function imagesOf(name: string): string[] { return imageMap.get(name) || [] }
+function onImgError(name: string) {
+  const cur = imageMap.get(name)
+  if (cur && cur.length > 1) imageMap.set(name, cur.slice(1))
+  else if (cur) imageMap.set(name, [])
+}
+
+// 结构化每日行程（地点 type='sightseeing'、餐厅 type='meal'、休息 type='rest'）
+const structuredDays = ref<any[][]>([])
 
 function scrollToPlanner() {
   document.getElementById('planner')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -56,6 +77,43 @@ function formatContent(content: string) {
   return marked.parse(content) as string
 }
 
+// 把完整行程按「第N天」拆成每天一小节，供各 tab 分别展示
+const daySections = computed<string[]>(() => {
+  const md = travelPlan.value?.overview || streamStore.fullText || ''
+  if (!md) return []
+  const lines = md.split('\n')
+  const headerIdx: number[] = []
+  lines.forEach((l, i) => { if (/第\s*\d+\s*天/.test(l)) headerIdx.push(i) })
+  if (headerIdx.length === 0) return []
+  const out: string[] = []
+  headerIdx.forEach((start, k) => {
+    const end = k + 1 < headerIdx.length ? headerIdx[k + 1] : lines.length
+    out.push(lines.slice(start, end).join('\n'))
+  })
+  return out
+})
+
+// 把当天出现的地点/餐厅名称用橙色 span 高亮，让 markdown 正文里更醒目
+function highlightNames(md: string, names: string[]): string {
+  if (!md || !names.length) return md
+  const uniq = [...new Set(names.filter((n): n is string => !!n && n.length >= 2))]
+    .sort((a, b) => b.length - a.length)
+  let out = md
+  for (const n of uniq) {
+    out = out.split(n).join(`<span class="nav-hl">${n}</span>`)
+  }
+  return out
+}
+
+// 行程就绪后，按地点/餐厅名称懒加载图片
+watch(() => structuredDays.value, (days) => {
+  for (const items of days) {
+    for (const it of items) {
+      if (it.name) loadImages(it.name, destination.value)
+    }
+  }
+})
+
 let cancelStream: (() => void) | null = null
 
 async function generateStream() {
@@ -63,6 +121,9 @@ async function generateStream() {
   if (streamStore.isStreaming) return
 
   streamStore.reset()
+  imageMap.clear()
+  imagePending.clear()
+  structuredDays.value = []
   streamStore.isStreaming = true
   travelPlan.value = null
   activeDay.value = 0
@@ -153,6 +214,17 @@ async function generateStream() {
           }))
 
           streamStore.dayPlans = streamDayPlans
+
+          // 构建结构化每日行程（供卡片渲染：地点橙色 + 地点/餐厅图片）
+          structuredDays.value = backendDays.map((dp: any) => (dp.activities || []).map((a: any) => ({
+            type: a.type || 'sightseeing',
+            name: a.name || '',
+            location: a.location || '',
+            time: a.time || '',
+            notes: a.notes || '',
+            cost: Math.round(a.cost || 0),
+            duration: a.duration ? Math.round(a.duration / 60) : 0
+          })))
 
           travelPlan.value = {
             planId: result.success ? 'plan_' + Date.now() : '',
@@ -375,13 +447,38 @@ function getMealType(time: string): string {
                 <span>¥{{ dayTabs[activeDay].budget }}</span>
               </div>
             </div>
-            <div class="plan-md" v-html="dayTabs[activeDay].html"></div>
-          </div>
-        </div>
 
-        <!-- 完整行程正文（不拆分，统一显示） -->
-        <div v-if="travelPlan?.overview" class="plan-detail">
-          <div class="plan-detail-inner" v-html="formatContent(travelPlan.overview)"></div>
+            <!-- 结构化行程卡：地点橙色、地点/餐厅左侧配图 -->
+            <div v-if="structuredDays[activeDay]?.length" class="itin-cards">
+              <div v-for="(slot, si) in structuredDays[activeDay]" :key="si"
+                   class="itin-card" :class="'itin-card--' + slot.type">
+                <div v-if="imagesOf(slot.name)[0]" class="itin-photo">
+                  <img :src="imagesOf(slot.name)[0]" :alt="slot.name" loading="lazy"
+                       referrerpolicy="no-referrer" @error="onImgError(slot.name)" />
+                </div>
+                <div class="itin-info">
+                  <div class="itin-title">
+                    <span v-if="slot.time" class="itin-time">{{ slot.time }}</span>
+                    <h4 :class="slot.type === 'sightseeing' ? 'itin-place' : 'itin-food'">{{ slot.name }}</h4>
+                  </div>
+                  <div v-if="slot.location" class="itin-loc">📍 {{ slot.location }}</div>
+                  <div v-if="slot.notes" class="itin-note">{{ slot.notes }}</div>
+                  <div v-if="slot.cost || slot.duration" class="itin-meta">
+                    <span v-if="slot.duration">⏱ {{ slot.duration }} 小时</span>
+                    <span v-if="slot.cost">¥{{ slot.cost }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 当天详细行程（从完整行程按「第N天」拆分到当前 tab） -->
+            <div v-if="daySections[activeDay]" class="plan-md day-narrative"
+                 v-html="formatContent(highlightNames(daySections[activeDay], (structuredDays[activeDay] || []).map((s: any) => s.name)))"></div>
+
+            <!-- 无结构化数据也无拆分正文时，回退原 markdown -->
+            <div v-if="!structuredDays[activeDay]?.length && !daySections[activeDay]"
+                 class="plan-md" v-html="dayTabs[activeDay].html"></div>
+          </div>
         </div>
       </div>
 
@@ -888,6 +985,62 @@ function getMealType(time: string): string {
   strong { color: var(--forest); }
   ul, ol { margin: 6px 0 8px; padding-left: 20px; }
   li { margin-bottom: 4px; }
+}
+
+/* 当天详细行程与上方卡片/概览的距离 */
+.day-narrative { margin-top: 14px; }
+
+/* markdown 正文里地点/餐厅名称橙色高亮 */
+.plan-md :deep(.nav-hl) { color: var(--sunset); font-weight: 800; }
+
+/* ─── 结构化行程卡（地点橙色 + 地点/餐厅配图） ─────────────── */
+.itin-cards { display: flex; flex-direction: column; gap: 12px; }
+
+.itin-card {
+  display: flex; gap: 14px; align-items: stretch;
+  background: #fff; border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+.itin-card--meal { border-color: #ecdfcf; }
+
+.itin-photo {
+  width: 118px; min-width: 118px; min-height: 96px;
+  background: var(--sunset-soft);
+}
+.itin-photo img {
+  width: 100%; height: 100%; min-height: 96px;
+  object-fit: cover; display: block;
+}
+
+.itin-info { flex: 1; min-width: 0; padding: 12px 14px 12px 0; }
+.itin-title { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.itin-time {
+  flex-shrink: 0; font-size: 11px; font-weight: 800; color: #fff;
+  background: var(--ink-3); padding: 2px 9px; border-radius: 20px;
+}
+/* 地点名称：橙色醒目 */
+.itin-place {
+  margin: 0; font-size: 16px; font-weight: 800; color: var(--sunset);
+  line-height: 1.3;
+}
+.itin-food { margin: 0; font-size: 15px; font-weight: 700; color: var(--forest); line-height: 1.3; }
+.itin-loc { color: var(--ink-2); font-size: 12px; margin-bottom: 3px; }
+.itin-note { color: #6e7d77; font-size: 12px; line-height: 1.6; margin-bottom: 6px; }
+
+.itin-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.itin-meta span {
+  font-size: 11px; color: var(--ink-2);
+  background: var(--roam-soft); border: 1px solid #d5e4da;
+  padding: 2px 9px; border-radius: 20px;
+}
+.itin-card--meal .itin-meta span { background: var(--sunset-soft); border-color: #f2c4a4; }
+
+@media (max-width: 700px) {
+  .itin-card { flex-direction: column; }
+  .itin-photo { width: 100%; min-width: 100%; min-height: 120px; }
+  .itin-photo img { min-height: 120px; }
+  .itin-info { padding: 8px 14px 14px; }
 }
 
 /* ─── 兼容：传统同步结果 ──────────────────────────────────── */
