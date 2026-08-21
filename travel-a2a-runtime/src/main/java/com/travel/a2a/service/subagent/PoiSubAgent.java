@@ -143,56 +143,89 @@ public class PoiSubAgent {
         if (interests == null || interests.isEmpty()) {
             return "景点";
         }
-        return String.join(" ", interests);
+        // 支持逗号/空格混合分隔的字符串列表，如 ["人文,自然,美食"]
+        List<String> flat = new ArrayList<>();
+        for (String item : interests) {
+            if (item != null && item.contains(",")) {
+                for (String part : item.split(",")) {
+                    String trimmed = part.trim();
+                    if (!trimmed.isEmpty()) flat.add(trimmed);
+                }
+            } else if (item != null && !item.trim().isEmpty()) {
+                flat.add(item.trim());
+            }
+        }
+        return flat.isEmpty() ? "景点" : String.join(" ", flat);
     }
 
-    /**
-     * 解析POI结果
-     */
     @SuppressWarnings("unchecked")
-    private List<PoiResult> parsePoiResults(Object result) {
+    private List<PoiResult> parsePoiResults(Object raw) {
         List<PoiResult> pois = new ArrayList<>();
 
-        if (result instanceof List) {
-            List<?> list = (List<?>) result;
+        Object poisObj = extractField(raw, "pois");
+        if (poisObj == null) {
+            poisObj = extractListRecursive(raw);
+        }
+        if (poisObj instanceof List<?> list) {
             for (Object item : list) {
-                if (item instanceof Map) {
-                    Map<String, Object> map = (Map<String, Object>) item;
-                    PoiResult poi = PoiResult.builder()
-                            .name(getStringValue(map, "name"))
-                            .address(getStringValue(map, "address"))
-                            .type(getStringValue(map, "type"))
-                            .distance(getIntValue(map, "distance"))
-                            .tel(getStringValue(map, "tel"))
-                            .longitude(getDoubleValue(map, "longitude"))
-                            .latitude(getDoubleValue(map, "latitude"))
-                            .build();
-                    pois.add(poi);
+                if (item instanceof Map<?, ?> map) {
+                    pois.add(PoiResult.builder()
+                            .name(getStr(map, "name"))
+                            .address(getStr(map, "address"))
+                            .type(getStr(map, "type"))
+                            .distance(getInt(map, "distance"))
+                            .tel(getStr(map, "tel"))
+                            .longitude(getDbl(map, "longitude"))
+                            .latitude(getDbl(map, "latitude"))
+                            .build());
                 }
             }
         }
-
         return pois;
     }
 
-    private String getStringValue(Map<String, Object> map, String key) {
-        Object value = map.get(key);
-        return value != null ? value.toString() : null;
-    }
-
-    private Integer getIntValue(Map<String, Object> map, String key) {
-        Object value = map.get(key);
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
+    @SuppressWarnings("unchecked")
+    private Object extractField(Object obj, String field) {
+        if (!(obj instanceof Map<?, ?> m)) return null;
+        Object val = m.get(field);
+        if (val != null) return val;
+        Object inner = m.get("result");
+        if (inner instanceof Map<?, ?> m2) {
+            val = m2.get(field);
+            if (val instanceof List<?>) return val;
+            Object inner2 = m2.get("result");
+            if (inner2 instanceof Map<?, ?> m3) {
+                val = m3.get(field);
+                if (val instanceof List<?>) return val;
+            }
         }
         return null;
     }
 
-    private Double getDoubleValue(Map<String, Object> map, String key) {
-        Object value = map.get(key);
-        if (value instanceof Number) {
-            return ((Number) value).doubleValue();
+    @SuppressWarnings("unchecked")
+    private List<?> extractListRecursive(Object obj) {
+        if (obj instanceof List<?> l && !l.isEmpty()) return l;
+        if (obj instanceof Map<?, ?> m) {
+            for (Object v : m.values()) {
+                List<?> found = extractListRecursive(v);
+                if (found != null) return found;
+            }
         }
         return null;
+    }
+
+    private static String getStr(Map<?, ?> m, String k) {
+        Object v = m.get(k);
+        return v != null ? v.toString() : null;
+    }
+
+    private static Integer getInt(Map<?, ?> m, String k) {
+        Object v = m.get(k);
+        return v instanceof Number n ? n.intValue() : null;
+    }
+
+    private static Double getDbl(Map<?, ?> m, String k) {
+        Object v = m.get(k);
+        return v instanceof Number n ? n.doubleValue() : null;
     }
 }

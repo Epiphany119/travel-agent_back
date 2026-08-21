@@ -37,44 +37,43 @@ public class EchoMcpServer {
         // Handler for /mcp/info - returns server info
         server.createContext("/mcp/info", exchange -> {
             log.info("Received request: {}", exchange.getRequestURI());
-            String resp = """
-                {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "result": {
-                        "name": "echo-weather",
-                        "version": "1.0.0",
-                        "tools": [
-                            {
-                                "name": "weather.get_forecast",
-                                "description": "获取天气预报",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "city": {
-                                            "type": "string",
-                                            "description": "城市名称"
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                "name": "weather.get_current",
-                                "description": "获取当前天气",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "city": {
-                                            "type": "string",
-                                            "description": "城市名称"
-                                        }
-                                    }
-                                }
-                            }
-                        ]
-                    }
-                }
-                """;
+            String resp =
+                "{\n" +
+                "    \"jsonrpc\": \"2.0\",\n" +
+                "    \"id\": 1,\n" +
+                "    \"result\": {\n" +
+                "        \"name\": \"echo-weather\",\n" +
+                "        \"version\": \"1.0.0\",\n" +
+                "        \"tools\": [\n" +
+                "            {\n" +
+                "                \"name\": \"weather.get_forecast\",\n" +
+                "                \"description\": \"获取天气预报\",\n" +
+                "                \"inputSchema\": {\n" +
+                "                    \"type\": \"object\",\n" +
+                "                    \"properties\": {\n" +
+                "                        \"city\": {\n" +
+                "                            \"type\": \"string\",\n" +
+                "                            \"description\": \"城市名称\"\n" +
+                "                        }\n" +
+                "                    }\n" +
+                "                }\n" +
+                "            },\n" +
+                "            {\n" +
+                "                \"name\": \"weather.get_current\",\n" +
+                "                \"description\": \"获取当前天气\",\n" +
+                "                \"inputSchema\": {\n" +
+                "                    \"type\": \"object\",\n" +
+                "                    \"properties\": {\n" +
+                "                        \"city\": {\n" +
+                "                            \"type\": \"string\",\n" +
+                "                            \"description\": \"城市名称\"\n" +
+                "                        }\n" +
+                "                    }\n" +
+                "                }\n" +
+                "            }\n" +
+                "        ]\n" +
+                "    }\n" +
+                "}";
             sendJson(exchange, resp);
         });
 
@@ -85,32 +84,31 @@ public class EchoMcpServer {
             log.debug("Request body: {}", body);
 
             // Echo back with weather data
-            String resp = """
-                {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "result": {
-                        "success": true,
-                        "data": {
-                            "city": "杭州",
-                            "forecast": [
-                                {
-                                    "date": "2026-08-12",
-                                    "tempMin": 26,
-                                    "tempMax": 34,
-                                    "text": "晴"
-                                },
-                                {
-                                    "date": "2026-08-13",
-                                    "tempMin": 27,
-                                    "tempMax": 35,
-                                    "text": "多云"
-                                }
-                            ]
-                        }
-                    }
-                }
-                """;
+            String resp =
+                "{\n" +
+                "    \"jsonrpc\": \"2.0\",\n" +
+                "    \"id\": 1,\n" +
+                "    \"result\": {\n" +
+                "        \"success\": true,\n" +
+                "        \"data\": {\n" +
+                "            \"city\": \"杭州\",\n" +
+                "            \"forecast\": [\n" +
+                "                {\n" +
+                "                    \"date\": \"2026-08-12\",\n" +
+                "                    \"tempMin\": 26,\n" +
+                "                    \"tempMax\": 34,\n" +
+                "                    \"text\": \"晴\"\n" +
+                "                },\n" +
+                "                {\n" +
+                "                    \"date\": \"2026-08-13\",\n" +
+                "                    \"tempMin\": 27,\n" +
+                "                    \"tempMax\": 35,\n" +
+                "                    \"text\": \"多云\"\n" +
+                "                }\n" +
+                "            ]\n" +
+                "        }\n" +
+                "    }\n" +
+                "}";
             sendJson(exchange, resp);
         });
 

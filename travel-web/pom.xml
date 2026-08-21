@@ -38,6 +38,27 @@
             <artifactId>travel-a2a-runtime</artifactId>
         </dependency>
 
+        <!-- MCP Server: Weather（8081） -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-mcp-server-weather</artifactId>
+        </dependency>
+        <!-- MCP Server: POI（8082） -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-mcp-server-poi</artifactId>
+        </dependency>
+        <!-- MCP Server: Meal（8083） -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-mcp-server-meal</artifactId>
+        </dependency>
+        <!-- MCP Server: Budget（8084） -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-mcp-server-budget</artifactId>
+        </dependency>
+
         <!-- MySQL驱动 -->
         <dependency>
             <groupId>com.mysql</groupId>

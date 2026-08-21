@@ -32,22 +32,22 @@ public class MealService {
         }
 
         try {
-            String requestBody = String.format("""
-                {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "poi.search",
-                        "arguments": {
-                            "keywords": "%s",
-                            "city": "%s",
-                            "types": "%s",
-                            "limit": %d
-                        }
-                    }
-                }
-                """, keywords, city, RESTAURANT_TYPE, limit != null ? limit : 10);
+            String requestBody = String.format(
+                "{\n" +
+                "    \"jsonrpc\": \"2.0\",\n" +
+                "    \"id\": 1,\n" +
+                "    \"method\": \"tools/call\",\n" +
+                "    \"params\": {\n" +
+                "        \"name\": \"poi.search\",\n" +
+                "        \"arguments\": {\n" +
+                "            \"keywords\": \"%s\",\n" +
+                "            \"city\": \"%s\",\n" +
+                "            \"types\": \"%s\",\n" +
+                "            \"limit\": %d\n" +
+                "        }\n" +
+                "    }\n" +
+                "}",
+                keywords, city, RESTAURANT_TYPE, limit != null ? limit : 10);
 
             String response = webClient.post()
                     .uri(poiServerUrl + "/mcp/call")
