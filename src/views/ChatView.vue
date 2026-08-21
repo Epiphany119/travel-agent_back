@@ -6,7 +6,6 @@ import { marked } from 'marked'
 import { subscribeA2AStream, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
 import { useUserStore } from '@/stores/user'
-import DayPlanCard from '@/components/DayPlanCard.vue'
 import roamlySymbol from '@/assets/brand/logo-app-icon.png'
 
 const router = useRouter()
@@ -24,18 +23,40 @@ const travelers = ref(2)
 const travelStyle = ref('轻松漫游')
 const interests = ref(['美食', '人文'])
 const travelPlan = ref<TravelPlan | null>(null)
-const activeDay = ref(1)
+const activeDay = ref(0)
+const globalWeather = ref<any>(null)
 const styles = ['轻松漫游', '深度人文', '美食优先', '亲子友好']
 const interestOptions = ['美食', '人文', '自然', '摄影', '购物', '夜生活']
 
-const dayBudget = computed(() => (travelPlan.value?.dayPlans || [])[activeDay.value - 1]?.dayBudget)
-const currentDayPlan = computed(() => (travelPlan.value?.dayPlans || [])[activeDay.value - 1])
+// 与 AgentPanel.vue 保持一致的 dayTabs 结构，统一渲染
+const dayTabs = computed(() => {
+  const plans = streamStore.dayPlans
+  if (plans.length === 0) return []
+  return plans.map((p) => {
+    const md = [
+      p.theme ? `## ${p.theme}` : '',
+      p.date ? `**日期：** ${p.date}` : '',
+      p.morning ? `### 🌅 上午\n${p.morning.plan}\n\n⏱ ${p.morning.duration} · ¥${p.morning.budget}` : '',
+      p.afternoon ? `### ☀️ 下午\n${p.afternoon.plan}\n\n⏱ ${p.afternoon.duration} · ¥${p.afternoon.budget}` : '',
+      p.evening ? `### 🌙 晚上\n${p.evening.plan}\n\n⏱ ${p.evening.duration} · ¥${p.evening.budget}` : '',
+      p.tips ? `### 💡 出行贴士\n${p.tips}` : '',
+    ].filter(Boolean).join('\n\n')
+    const dayCost = (p.morning?.budget || 0) + (p.afternoon?.budget || 0) + (p.evening?.budget || 0)
+    return {
+      label: `Day ${p.dayNumber}`,
+      subLabel: p.date || '',
+      html: marked.parse(md) as string,
+      weather: null,
+      budget: dayCost || null
+    }
+  })
+})
 
-const formatContent = (content: string) => marked(content)
+function formatContent(content: string) {
+  return marked.parse(content) as string
+}
 
 let cancelStream: (() => void) | null = null
-
-// ─── 流式生成（通过 A2A 后端 SSE）──────────────────────────────────────
 
 async function generateStream() {
   if (!destination.value.trim()) return ElMessage.warning('先告诉我想去哪里')
@@ -44,9 +65,9 @@ async function generateStream() {
   streamStore.reset()
   streamStore.isStreaming = true
   travelPlan.value = null
-  activeDay.value = 1
+  activeDay.value = 0
+  globalWeather.value = null
 
-  // 连接 A2A 后端 SSE 流
   cancelStream = subscribeA2AStream({
     destination: destination.value,
     days: days.value,
@@ -57,7 +78,6 @@ async function generateStream() {
   }, (event) => {
     switch (event.name) {
       case 'task_update':
-        // 任务状态更新
         console.log('[Plan] task_update:', event.data)
         break
       case 'tool_call':
@@ -73,32 +93,28 @@ async function generateStream() {
         if (typeof event.data === 'string') {
           streamStore.fullText += event.data
         } else if (event.data && typeof event.data === 'object') {
-          // 如果后端发的是 {delta: "..."} 格式
           streamStore.fullText += event.data.delta || event.data.content || ''
         }
         break
-      case 'task_done':
+      case 'task_done': {
         console.log('[Plan] task_done received:', event.data)
-        // 后端返回 TravelPlanResult，提取 dayPlans 并构造 travelPlan
         const result = event.data
         if (result && typeof result === 'object') {
           const backendDays = result.dayPlans || []
-          
-          // === 映射 1: 给 streamStore.dayPlans (DayPlanCard 组件使用) ===
-          // DayPlanCard 需要 { morning, afternoon, evening } 结构
+
           const streamDayPlans = backendDays.map((dp: any) => {
             const activities = dp.activities || []
-            const morningAct = activities.find((a: any) => a.type === 'sightseeing' && (a.time?.startsWith('0') || a.time?.startsWith('1')))
-            const afternoonAct = activities.find((a: any) => a.type === 'sightseeing' && (a.time?.startsWith('1') || a.time?.startsWith('2')))
+            const morningAct = activities.find((a: any) => a.time?.startsWith('0') || a.time?.startsWith('1'))
+            const afternoonAct = activities.find((a: any) => a.time?.startsWith('1') || a.time?.startsWith('2'))
             const eveningAct = activities.find((a: any) => a.type === 'rest' || a.type === 'meal')
-            
+
             const mkSlot = (act: any) => act ? {
               plan: `${act.name}${act.location ? ' @ ' + act.location : ''}${act.notes ? ' - ' + act.notes : ''}`,
               duration: act.duration ? Math.round(act.duration / 60) + '小时' : '1小时',
               tips: act.notes || '',
               budget: Math.round(act.cost || 0)
             } : undefined
-            
+
             return {
               dayNumber: dp.day || 0,
               theme: morningAct?.name || afternoonAct?.name || `第${dp.day}天`,
@@ -109,8 +125,7 @@ async function generateStream() {
               tips: dp.weather ? `天气: ${dp.weather} ${dp.temperature || ''}` : ''
             }
           })
-          
-          // === 映射 2: 给 travelPlan.dayPlans (传统详情页使用) ===
+
           const detailDayPlans = backendDays.map((dp: any) => ({
             dayNumber: dp.day || 0,
             date: dp.date || '',
@@ -137,10 +152,8 @@ async function generateStream() {
               }))
           }))
 
-          // 填充 streamStore (供 DayPlanCard 使用)
           streamStore.dayPlans = streamDayPlans
-          
-          // 填充前端 travelPlan (供传统详情页使用)
+
           travelPlan.value = {
             planId: result.success ? 'plan_' + Date.now() : '',
             destination: destination.value,
@@ -153,10 +166,15 @@ async function generateStream() {
             packingList: [],
             dayPlans: detailDayPlans
           }
+
+          // 按"第1天/第2天/..."拆分 overview，分别塞入各 Tab
+          const overview = result.finalPlan || streamStore.fullText
+          console.log('[Plan] overview length:', overview?.length, 'first 200 chars:', overview?.slice(0, 200))
         }
         streamStore.isStreaming = false
         ElMessage.success('行程规划完成！')
         break
+      }
       case 'error':
         console.error('[Plan] error:', event.data)
         streamStore.error = event.data?.message || '未知错误'
@@ -167,16 +185,6 @@ async function generateStream() {
         break
     }
   })
-
-// 辅助函数：根据时间推断餐段
-function getMealType(time: string): string {
-  if (!time) return '餐饮'
-  const h = parseInt(time.split(':')[0])
-  if (h < 10) return '早餐'
-  if (h < 14) return '午餐'
-  if (h < 17) return '下午茶'
-  return '晚餐'
-}
 }
 
 function cancelStreaming() {
@@ -187,6 +195,14 @@ function cancelStreaming() {
   streamStore.reset()
 }
 
+function getMealType(time: string): string {
+  if (!time) return '餐饮'
+  const h = parseInt(time.split(':')[0])
+  if (h < 10) return '早餐'
+  if (h < 14) return '午餐'
+  if (h < 17) return '下午茶'
+  return '晚餐'
+}
 </script>
 
 <template>
@@ -194,7 +210,10 @@ function cancelStreaming() {
     <section class="hero">
       <img class="hero-logo" :src="roamlySymbol" alt="Roamly" />
       <p class="eyebrow">TRAVEL, THOUGHTFULLY</p>
-      <h1>把期待，变成一趟<br><em>刚刚好的旅行。</em></h1>
+      <h1>
+        <span>把期待，变成一趟</span><br/>
+        <em>刚刚好的旅行。</em>
+      </h1>
       <p class="sub">告诉我目的地、时间和预算。Roamly 会把复杂的功课，整理成可以立刻出发的每一天。</p>
       <div class="hero-actions">
         <button class="btn-primary" @click="scrollToPlanner">开始规划</button>
@@ -296,7 +315,7 @@ function cancelStreaming() {
       </div>
     </section>
 
-    <!-- ─── 流式输出区域 ─────────────────────────────────────────────────── -->
+    <!-- ─── 流式 / 最终结果展示 ───────────────────────────────────────────── -->
     <section
       v-if="streamStore.isStreaming || streamStore.fullText || streamStore.dayPlans.length > 0"
       class="result stream-result"
@@ -314,31 +333,55 @@ function cancelStreaming() {
         </div>
       </div>
 
-      <!-- 打字机效果文本 -->
-      <div v-if="streamStore.fullText" class="stream-container">
-        <div class="stream-text" v-html="formatContent(streamStore.fullText)"></div>
+      <!-- 工具调用进度（流式中） -->
+      <div v-if="streamStore.toolCalls.length > 0" class="tool-progress">
+        <div v-for="(tool, idx) in streamStore.toolCalls" :key="idx" class="tool-calling">
+          <span :class="['tool-badge', streamStore.isStreaming ? 'tool-badge--calling' : 'tool-badge--done']">
+            <span v-if="streamStore.isStreaming" class="loading-dot"></span>
+            {{ streamStore.isStreaming ? '🔧 调用中' : '✅ 已完成' }}: {{ tool.name }}
+          </span>
+        </div>
+      </div>
 
-        <!-- 工具调用进度 -->
-        <div v-if="streamStore.toolCalls.length > 0" class="tool-progress">
-          <div
-            v-for="(tool, idx) in streamStore.toolCalls"
-            :key="idx"
-            class="tool-calling"
-          >
-            <span :class="['tool-badge', streamStore.isStreaming ? 'tool-badge--calling' : 'tool-badge--done']">
-              <span v-if="streamStore.isStreaming" class="loading-dot"></span>
-              {{ streamStore.isStreaming ? '🔧 调用中' : '✅ 已完成' }}: {{ tool.name }}
-            </span>
+      <!-- Markdown 打字效果（流式中实时展示） -->
+      <div v-if="streamStore.fullText && streamStore.isStreaming" class="stream-text" v-html="formatContent(streamStore.fullText)"></div>
+
+      <!-- ─── Tab + Markdown 计划展示（与 AgentPanel.vue 一致） ─────────────── -->
+      <div v-if="dayTabs.length > 0" class="plan-section">
+        <div class="plan-head">
+          <h3>{{ destination }} · {{ dayTabs.length }} 天</h3>
+        </div>
+
+        <!-- 按天 Tabs -->
+        <div class="day-tabs">
+          <div class="tab-bar">
+            <button
+              v-for="(tab, i) in dayTabs"
+              :key="i"
+              class="tab-btn"
+              :class="{ active: activeDay === i }"
+              @click="activeDay = i"
+            >
+              <span class="tab-label">{{ tab.label }}</span>
+              <span v-if="tab.budget" class="tab-temp">¥{{ tab.budget }}</span>
+            </button>
+          </div>
+
+          <!-- Tab 内容 -->
+          <div v-if="dayTabs[activeDay]" class="tab-content">
+            <div class="day-weather-row">
+              <div v-if="dayTabs[activeDay].budget" class="weather-chip budget-chip">
+                <span>💰</span>
+                <span>¥{{ dayTabs[activeDay].budget }}</span>
+              </div>
+            </div>
+            <div class="plan-md" v-html="dayTabs[activeDay].html"></div>
           </div>
         </div>
 
-        <!-- DayPlan 卡片（实时追加） -->
-        <div v-if="streamStore.dayPlans.length > 0" class="day-plans">
-          <DayPlanCard
-            v-for="plan in streamStore.dayPlans"
-            :key="plan.dayNumber"
-            :plan="plan"
-          />
+        <!-- 完整行程正文（不拆分，统一显示） -->
+        <div v-if="travelPlan?.overview" class="plan-detail">
+          <div class="plan-detail-inner" v-html="formatContent(travelPlan.overview)"></div>
         </div>
       </div>
 
@@ -348,8 +391,8 @@ function cancelStreaming() {
       </div>
     </section>
 
-    <!-- ─── 传统同步结果（保持兼容）────────────────────────────────────── -->
-    <section v-if="travelPlan && !streamStore.isStreaming" class="result">
+    <!-- ─── 传统同步结果（保持兼容）───────────────────────────────────────── -->
+    <section v-if="travelPlan && !streamStore.isStreaming && dayTabs.length === 0" class="result">
       <div class="result-head">
         <div>
           <p class="eyebrow">YOUR ITINERARY</p>
@@ -375,17 +418,17 @@ function cancelStreaming() {
           </button>
         </div>
 
-        <div v-if="currentDayPlan" class="day-card">
+        <div v-if="travelPlan.dayPlans?.[activeDay]" class="day-card">
           <div class="day-title">
             <div>
-              <p>DAY {{ String(currentDayPlan.dayNumber).padStart(2, '0') }}</p>
-              <h3>{{ currentDayPlan.theme }}</h3>
+              <p>DAY {{ String(travelPlan.dayPlans[activeDay].dayNumber).padStart(2, '0') }}</p>
+              <h3>{{ travelPlan.dayPlans[activeDay].theme }}</h3>
             </div>
-            <b>预算 ¥{{ currentDayPlan.dayBudget?.toLocaleString() }}</b>
+            <b>预算 ¥{{ travelPlan.dayPlans[activeDay].dayBudget?.toLocaleString() }}</b>
           </div>
 
           <div class="timeline">
-            <div v-for="(attraction, idx) in currentDayPlan.attractions" :key="idx" class="timeline-item">
+            <div v-for="(attraction, idx) in travelPlan.dayPlans[activeDay].attractions" :key="idx" class="timeline-item">
               <span>{{ idx + 1 }}</span>
               <div>
                 <h4>{{ attraction.name }}</h4>
@@ -395,41 +438,20 @@ function cancelStreaming() {
             </div>
           </div>
 
-          <div v-if="currentDayPlan.meals?.length" class="meal-grid">
-            <div v-for="meal in currentDayPlan.meals" :key="meal.mealType" class="meal">
+          <div v-if="travelPlan.dayPlans[activeDay].meals?.length" class="meal-grid">
+            <div v-for="meal in travelPlan.dayPlans[activeDay].meals" :key="meal.mealType" class="meal">
               <span>{{ meal.mealType }}</span>
               <h4>{{ meal.restaurantName }}</h4>
               <p>{{ meal.cuisine }} · 人均 ¥{{ meal.avgPrice }}</p>
               <small>{{ meal.reason }}</small>
             </div>
           </div>
-
-          <div v-if="currentDayPlan.transportation" class="notice">
-            <strong>交通：</strong>{{ currentDayPlan.transportation }}
-          </div>
         </div>
 
-        <div v-if="travelPlan.overview" class="ai-content">
-          <h3>📋 行程概览</h3>
-          <p>{{ travelPlan.overview }}</p>
-        </div>
-
-        <div class="tips">
-          <div v-if="travelPlan.travelTips?.length">
-            <h3>✦ 旅行贴士</h3>
-            <p v-for="tip in travelPlan.travelTips" :key="tip">{{ tip }}</p>
-          </div>
-          <div v-if="travelPlan.packingList?.length">
-            <h3>⌁ 打包清单</h3>
-            <div class="packing">
-              <span v-for="item in travelPlan.packingList" :key="item">{{ item }}</span>
-            </div>
-          </div>
-        </div>
+        <div v-if="travelPlan.overview" class="ai-content" v-html="formatContent(travelPlan.overview)"></div>
       </template>
     </section>
   </main>
-
 </template>
 
 <style scoped lang="scss">
@@ -443,6 +465,7 @@ function cancelStreaming() {
 
 .hero {
   width: min(860px, calc(100% - 40px));
+  margin: 0 auto;
   text-align: center;
   padding: 40px 0 45px;
 }
@@ -459,6 +482,7 @@ function cancelStreaming() {
   font: 54px/1.08 "DM Serif Display", "Noto Sans SC";
   letter-spacing: -1.6px;
   margin: 0;
+  text-align: center;
 }
 
 .hero h1 em { font-style: normal; color: var(--roam); }
@@ -481,12 +505,7 @@ function cancelStreaming() {
   margin-top: 28px;
 }
 
-/* Hero 品牌与双按钮 */
-.hero-logo {
-  width: 32px;
-  height: 32px;
-  margin-bottom: 16px;
-}
+.hero-logo { width: 32px; height: 32px; margin-bottom: 16px; }
 
 .hero-actions {
   display: flex;
@@ -575,11 +594,7 @@ function cancelStreaming() {
   outline: 0;
 }
 
-.number-control {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.number-control { display: flex; justify-content: space-between; align-items: center; }
 
 .number-control button {
   border: 0;
@@ -620,11 +635,7 @@ function cancelStreaming() {
   border-color: var(--forest);
 }
 
-.generate-row {
-  display: flex;
-  gap: 12px;
-  margin-top: 28px;
-}
+.generate-row { display: flex; gap: 12px; margin-top: 28px; }
 
 .generate {
   display: flex;
@@ -640,7 +651,6 @@ function cancelStreaming() {
 }
 
 .generate:disabled { opacity: 0.65; cursor: not-allowed; }
-
 .generate i { font-size: 24px; font-style: normal; }
 
 .generate--stream {
@@ -664,10 +674,7 @@ function cancelStreaming() {
   min-width: 120px;
 }
 
-.spinner {
-  animation: spin 1s linear infinite;
-  display: inline-block;
-}
+.spinner { animation: spin 1s linear infinite; display: inline-block; }
 
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -698,6 +705,192 @@ function cancelStreaming() {
 .budget span, .budget small { display: block; font-size: 11px; color: #6f847b; }
 .budget b { display: block; font: 27px "DM Serif Display"; color: var(--forest); margin: 4px 0; }
 
+/* ─── 工具调用进度 ─────────────────────────────────────────── */
+.tool-progress {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-calling { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 24px;
+  font-size: 13px;
+}
+
+.tool-badge--calling {
+  background: #fff7e6;
+  color: #e6a23c;
+  border: 1px solid #f5dab1;
+}
+
+.tool-badge--done {
+  background: #f0f9eb;
+  color: #67c23a;
+  border: 1px solid #c2e7b0;
+}
+
+.loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e6a23c;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ─── 流式打字效果 ─────────────────────────────────────────── */
+.stream-text {
+  margin-top: 16px;
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  line-height: 1.8;
+  color: #303133;
+  font-size: 14px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ─── 计划区域（与 AgentPanel.vue 一致） ───────────────────── */
+.plan-section {
+  margin-top: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.plan-head {
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.plan-head h3 { margin: 0; font-size: 18px; color: var(--ink); }
+
+/* 按天 Tabs */
+.day-tabs { }
+.tab-bar {
+  display: flex; gap: 6px; overflow-x: auto; padding: 14px 20px 12px;
+  border-bottom: 2px solid var(--line); scrollbar-width: none;
+}
+.tab-bar::-webkit-scrollbar { display: none; }
+
+.tab-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 16px; border-radius: 12px; border: 1.5px solid transparent;
+  background: transparent; cursor: pointer; transition: all 0.2s;
+  flex-shrink: 0; min-width: 60px;
+}
+
+.tab-label { font-size: 13px; font-weight: 700; color: #98a59f; transition: color 0.2s; }
+.tab-temp { font-size: 11px; color: #c0cac4; transition: color 0.2s; }
+
+.tab-btn.active {
+  border-color: var(--forest);
+  background: var(--roam-soft);
+}
+.tab-btn.active .tab-label { color: var(--forest); }
+.tab-btn.active .tab-temp { color: var(--forest); }
+
+.tab-content { padding: 16px 20px 20px; }
+
+.day-weather-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+
+.weather-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #f0f7f4; border: 1px solid #d5e4da;
+  color: #3d6e5a; font-size: 12px; padding: 5px 10px; border-radius: 20px;
+}
+
+.budget-chip { background: #fef9ec; border-color: #f0dfb5; color: #a0712e; }
+
+/* ─── 完整行程正文 ─────────────────────────────────────── */
+.plan-detail {
+  margin-top: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.plan-detail-inner {
+  padding: 22px 24px;
+  line-height: 1.8;
+  font-size: 14px;
+  color: #333;
+
+  :deep(h1), :deep(h2), :deep(h3) {
+    color: var(--forest);
+    margin: 1em 0 0.5em;
+    font-weight: 700;
+  }
+  :deep(h1) { font-size: 22px; }
+  :deep(h2) { font-size: 18px; border-bottom: 1.5px solid var(--line); padding-bottom: 6px; }
+  :deep(h3) { font-size: 15px; }
+  :deep(p) { margin: 0.7em 0; }
+  :deep(ul), :deep(ol) { padding-left: 22px; margin: 0.7em 0; }
+  :deep(li) { margin: 0.3em 0; }
+  :deep(strong) { color: var(--sunset); font-weight: 600; }
+  :deep(em) { color: var(--sunset); font-style: italic; }
+  :deep(code) {
+    background: var(--roam-soft);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  :deep(blockquote) {
+    border-left: 4px solid var(--sunset);
+    margin: 1em 0;
+    padding: 10px 16px;
+    background: var(--sunset-soft);
+    color: #66756f;
+  }
+  :deep(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+    font-size: 13px;
+  }
+  :deep(th) {
+    background: var(--roam-soft);
+    color: var(--forest);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 2px solid var(--line);
+  }
+  :deep(td) {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  :deep(tr:last-child td) { border-bottom: none; }
+}
+
+/* Markdown 内容 */
+.plan-md {
+  background: #fafaf8; border: 1px solid var(--line); border-radius: 14px;
+  padding: 18px 20px; font-size: 13.5px; line-height: 1.75; color: var(--ink);
+
+  h2 { font-size: 17px; font-weight: 700; color: var(--ink); margin: 0 0 10px; border-bottom: 1.5px solid var(--line); padding-bottom: 6px; }
+  h3 { font-size: 14px; font-weight: 700; color: var(--ink-2); margin: 14px 0 6px; }
+  p { margin: 0 0 8px; }
+  strong { color: var(--forest); }
+  ul, ol { margin: 6px 0 8px; padding-left: 20px; }
+  li { margin-bottom: 4px; }
+}
+
+/* ─── 兼容：传统同步结果 ──────────────────────────────────── */
 .days { display: flex; gap: 8px; margin: 28px 0 16px; }
 
 .days button {
@@ -760,109 +953,6 @@ function cancelStreaming() {
 
 .meal > span { font-size: 10px; font-weight: 800; color: var(--sunset); }
 
-.notice {
-  font-size: 11px;
-  line-height: 1.7;
-  color: #62746d;
-  margin: 20px 0 0;
-  background: var(--roam-soft);
-  padding: 12px;
-  border-radius: 9px;
-}
-
-.tips { display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; margin-top: 28px; }
-.tips h3 { font-size: 16px; margin: 0 0 10px; }
-.tips p { font-size: 12px; color: #65756f; line-height: 1.8; margin: 3px 0; }
-
-.packing { display: flex; flex-wrap: wrap; gap: 8px; }
-.packing span {
-  font-size: 11px;
-  background: var(--roam-soft);
-  color: var(--roam);
-  border-radius: 15px;
-  padding: 6px 9px;
-}
-
-/* ─── 流式输出样式 ─────────────────────────────────────────────────────────── */
-
-.stream-container {
-  padding: 20px 24px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--card), var(--roam-soft));
-  margin-top: 20px;
-  border: 1px solid #DCE8E2;
-}
-
-.stream-text {
-  line-height: 1.8;
-  color: #303133;
-  font-size: 15px;
-}
-
-.tool-progress {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tool-calling {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tool-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 24px;
-  font-size: 13px;
-}
-
-.tool-badge--calling {
-  background: #fff7e6;
-  color: #e6a23c;
-  border: 1px solid #f5dab1;
-}
-
-.tool-badge--done {
-  background: #f0f9eb;
-  color: #67c23a;
-  border: 1px solid #c2e7b0;
-}
-
-.loading-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #e6a23c;
-  animation: pulse 1s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-.day-plans {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.stream-error {
-  margin-top: 16px;
-  padding: 14px 18px;
-  background: var(--sunset-soft);
-  border: 1px solid #F2C4B4;
-  border-radius: 8px;
-  color: #c0392b;
-  font-size: 14px;
-}
-
 /* AI 内容样式 */
 .ai-content {
   margin-top: 20px;
@@ -888,41 +978,22 @@ function cancelStreaming() {
 .ai-content :deep(h3) { font-size: 16px; }
 
 .ai-content :deep(p) { margin: 0.8em 0; }
-
-.ai-content :deep(ul),
-.ai-content :deep(ol) { padding-left: 24px; margin: 0.8em 0; }
-
+.ai-content :deep(ul), .ai-content :deep(ol) { padding-left: 24px; margin: 0.8em 0; }
 .ai-content :deep(li) { margin: 0.4em 0; }
-
 .ai-content :deep(strong) { color: var(--sunset); font-weight: 600; }
 
-.ai-content :deep(code) {
-  background: var(--roam-soft);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.ai-content :deep(pre) {
-  background: #2d3748;
-  color: #e2e8f0;
-  padding: 16px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 1em 0;
-}
-
-.ai-content :deep(blockquote) {
-  border-left: 4px solid var(--sunset);
-  margin: 1em 0;
-  padding: 10px 16px;
+.stream-error {
+  margin-top: 16px;
+  padding: 14px 18px;
   background: var(--sunset-soft);
-  color: #66756f;
+  border: 1px solid #F2C4B4;
+  border-radius: 8px;
+  color: #c0392b;
+  font-size: 14px;
 }
 
 @media (max-width: 700px) {
   .hero { padding: 45px 0 30px; }
-  .hero h1 { font-size: 39px; }
   .trust { gap: 9px; font-size: 9px; }
   .planner-card, .result { width: calc(100% - 26px); padding: 23px 18px; }
   .form-grid, .choice-row, .tips, .generate-row { grid-template-columns: 1fr; }
