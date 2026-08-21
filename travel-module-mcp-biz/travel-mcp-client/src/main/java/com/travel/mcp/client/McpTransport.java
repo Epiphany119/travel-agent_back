@@ -93,7 +93,7 @@ public class McpTransport {
         return new McpToolResult(
             toolCall.name(),
             (Boolean) result.getOrDefault("success", true),
-            result.get("data"),
+            result.get("result"),
             (String) result.get("error")
         );
     }

@@ -58,6 +58,8 @@ public class ZhipuChatConfig {
         OpenAiChatOptions options = new OpenAiChatOptions();
         options.setModel(model);
         options.setTemperature(0.7d);
+        // 提高最大输出 token，避免长行程（多天详细计划）被截断
+        options.setMaxTokens(4096);
 
         // 构建带拦截器的 RestClient，用于诊断 Authorization 头是否正确设置
         RestClient.Builder restClientBuilder = RestClient.builder()

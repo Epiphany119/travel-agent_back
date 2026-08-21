@@ -42,30 +42,47 @@ public class PoiSubAgent {
         log.info("PoiSubAgent: 搜索POI, destination={}, interests={}", destination, interests);
 
         try {
-            // 构建搜索关键词
-            String keywords = buildKeywords(interests);
-            Map<String, Object> params = new HashMap<>();
-            params.put("keywords", keywords);
-            params.put("city", destination);
-            params.put("offset", 20);
+            // 搜索真景点：按兴趣挑选高德景点关键词，避开把兴趣词当搜索词（避免搜出餐饮/生活类）
+            String keywords = buildAttractionKeywords(interests);
+            List<PoiResult> pois = searchOnce(keywords, destination);
 
-            McpToolResult result = poiSession.callTool("poi.search", params);
+            // 兜底：如果第一波只搜到很少景点，再补一次宽泛的「旅游景点」搜索并合并去重
+            if (pois.size() < 5 && !keywords.contains("旅游景点")) {
+                List<PoiResult> more = searchOnce("旅游景点", destination);
+                for (PoiResult p : more) {
+                    if (pois.stream().noneMatch(e -> (e.getName() != null && e.getName().equals(p.getName())))) {
+                        pois.add(p);
+                    }
+                }
+                log.info("PoiSubAgent: 补搜「旅游景点」后合并, total={}", pois.size());
+            }
 
             long elapsedMs = System.currentTimeMillis() - startTime;
-
-            if (result.success()) {
-                List<PoiResult> pois = parsePoiResults(result.result());
-                log.info("PoiSubAgent: 搜索POI成功, count={}, elapsedMs={}", pois.size(), elapsedMs);
-                return AgentResult.success("poi", pois, elapsedMs);
-            } else {
-                log.warn("PoiSubAgent: 搜索POI失败, error={}", result.error());
-                return AgentResult.failure("poi", result.error(), elapsedMs);
-            }
+            log.info("PoiSubAgent: 搜索POI成功, count={}, elapsedMs={}", pois.size(), elapsedMs);
+            return AgentResult.success("poi", pois, elapsedMs);
         } catch (Exception e) {
             long elapsedMs = System.currentTimeMillis() - startTime;
             log.error("PoiSubAgent: 搜索POI异常", e);
             return AgentResult.failure("poi", e.getMessage(), elapsedMs);
         }
+    }
+
+    /** 单次高德 POI 景点搜索；失败或异常返回空列表 */
+    private List<PoiResult> searchOnce(String keywords, String city) {
+        try {
+            Map<String, Object> params = new HashMap<>();
+            params.put("keywords", keywords);
+            params.put("city", city);
+            params.put("offset", 25);
+            McpToolResult result = poiSession.callTool("poi.search", params);
+            if (result.success()) {
+                return parsePoiResults(result.result());
+            }
+            log.warn("POI 搜索失败: keywords={}, error={}", keywords, result.error());
+        } catch (Exception e) {
+            log.warn("POI 搜索异常: keywords={}, err={}", keywords, e.getMessage());
+        }
+        return new ArrayList<>();
     }
 
     /**
@@ -139,23 +156,22 @@ public class PoiSubAgent {
     /**
      * 构建搜索关键词
      */
-    private String buildKeywords(List<String> interests) {
-        if (interests == null || interests.isEmpty()) {
-            return "景点";
-        }
-        // 支持逗号/空格混合分隔的字符串列表，如 ["人文,自然,美食"]
+    private String buildAttractionKeywords(List<String> interests) {
+        // 按兴趣选择高德「景点」关键词，保证搜到真景点，让计划里景点更多、更丰富
         List<String> flat = new ArrayList<>();
-        for (String item : interests) {
-            if (item != null && item.contains(",")) {
-                for (String part : item.split(",")) {
-                    String trimmed = part.trim();
-                    if (!trimmed.isEmpty()) flat.add(trimmed);
+        if (interests != null) {
+            for (String item : interests) {
+                if (item == null) continue;
+                for (String part : item.split("[,，\\s]+")) {
+                    String t = part.trim();
+                    if (!t.isEmpty()) flat.add(t);
                 }
-            } else if (item != null && !item.trim().isEmpty()) {
-                flat.add(item.trim());
             }
         }
-        return flat.isEmpty() ? "景点" : String.join(" ", flat);
+        if (flat.stream().anyMatch(i -> i.contains("自然"))) return "公园 景区 自然风景";
+        if (flat.stream().anyMatch(i -> i.contains("摄影") || i.contains("网红"))) return "景点 景区";
+        // 默认 & 人文/历史：用宽泛词保证景点数量（过窄关键词会搜到个位数）
+        return "旅游景点 博物馆 古迹";
     }
 
     @SuppressWarnings("unchecked")

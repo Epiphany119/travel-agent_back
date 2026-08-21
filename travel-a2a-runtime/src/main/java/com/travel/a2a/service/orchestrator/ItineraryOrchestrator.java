@@ -267,6 +267,8 @@ public class ItineraryOrchestrator {
 
     /**
      * 构建当日活动
+     * <p>优先用去重后的景点/餐厅，每天配 2 个不同景点 + 2 个不同餐厅，
+     * 并按天错开索引，避免同一天/相邻天重复同一地点导致图片重复。</p>
      */
     private List<DayPlan.Activity> buildDailyActivities(int dayIndex,
                                                          int totalDays,
@@ -274,77 +276,85 @@ public class ItineraryOrchestrator {
                                                          List<MealResult> meals,
                                                          TravelPlanRequest request) {
         List<DayPlan.Activity> activities = new ArrayList<>();
-        int poiIndex = dayIndex;
 
-        // 上午：景点1
-        if (poiIndex < pois.size()) {
-            PoiResult poi = pois.get(poiIndex);
-            activities.add(DayPlan.Activity.builder()
-                    .time("09:00")
-                    .type("sightseeing")
-                    .name(poi.getName())
-                    .location(poi.getAddress())
-                    .duration(120)
-                    .cost(50)
-                    .notes("建议提前购票")
-                    .build());
+        List<PoiResult> uniqPois = distinctByName(pois);
+        List<MealResult> uniqMeals = distinctByName(meals);
+
+        // 上午：景点1（每天取不同的索引，错开重复）
+        PoiResult poi1 = pick(uniqPois, dayIndex * 2);
+        if (poi1 != null) {
+            activities.add(activity("09:00", "sightseeing", poi1.getName(), poi1.getAddress(),
+                    150, 45, "景点 · 建议上午前往，错峰游览"));
         }
 
         // 午餐
-        if (dayIndex < meals.size()) {
-            MealResult meal = meals.get(dayIndex);
-            activities.add(DayPlan.Activity.builder()
-                    .time("12:00")
-                    .type("meal")
-                    .name(meal.getName())
-                    .location(meal.getAddress())
-                    .duration(90)
-                    .cost(meal.getAvgPrice() != null ? meal.getAvgPrice() : 100)
-                    .notes("人均消费约 " + (meal.getAvgPrice() != null ? meal.getAvgPrice() : 100) + " 元")
-                    .build());
+        MealResult lunch = pick(uniqMeals, dayIndex * 2);
+        if (lunch != null) {
+            activities.add(activity("12:00", "meal", lunch.getName(), lunch.getAddress(),
+                    90, 80, "午餐 · 当地特色美食"));
         }
 
-        // 下午：景点2
-        poiIndex = (dayIndex + totalDays) % Math.max(pois.size(), 1);
-        if (poiIndex < pois.size()) {
-            PoiResult poi = pois.get(poiIndex);
-            activities.add(DayPlan.Activity.builder()
-                    .time("14:00")
-                    .type("sightseeing")
-                    .name(poi.getName())
-                    .location(poi.getAddress())
-                    .duration(180)
-                    .cost(50)
-                    .notes("适合拍照打卡")
-                    .build());
+        // 下午：景点2（与上午不同）
+        PoiResult poi2 = pick(uniqPois, dayIndex * 2 + 1);
+        if (poi2 != null && !sameName(poi1, poi2)) {
+            activities.add(activity("14:00", "sightseeing", poi2.getName(), poi2.getAddress(),
+                    150, 45, "景点 · 下午光线好，适合游览打卡"));
         }
 
         // 晚餐
-        int dinnerIndex = (dayIndex + 1) % Math.max(meals.size(), 1);
-        if (dinnerIndex < meals.size()) {
-            MealResult meal = meals.get(dinnerIndex);
-            activities.add(DayPlan.Activity.builder()
-                    .time("18:00")
-                    .type("meal")
-                    .name(meal.getName())
-                    .location(meal.getAddress())
-                    .duration(90)
-                    .cost(meal.getAvgPrice() != null ? meal.getAvgPrice() : 100)
-                    .notes("特色" + (meal.getCuisine() != null ? meal.getCuisine() : "美食"))
-                    .build());
+        MealResult dinner = pick(uniqMeals, dayIndex * 2 + 1);
+        if (dinner != null && !sameName(lunch, dinner)) {
+            activities.add(activity("18:00", "meal", dinner.getName(), dinner.getAddress(),
+                    90, 90, "晚餐 · 结束一天的行程"));
         }
 
         // 晚上休息
-        activities.add(DayPlan.Activity.builder()
-                .time("20:00")
-                .type("rest")
-                .name("返回酒店休息")
-                .location(request.getDestination())
-                .duration(0)
-                .cost(0)
-                .notes("好好休息，明天继续探索")
-                .build());
+        activities.add(activity("20:00", "rest", "返回酒店休息", request.getDestination(),
+                0, 0, "好好休息，明天继续探索"));
 
         return activities;
+    }
+
+    /** 按名称去重（名称相同视为同一点，避免重复地点/重复图片） */
+    private <T> List<T> distinctByName(List<T> list) {
+        if (list == null) return new ArrayList<>();
+        List<T> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (T item : list) {
+            String n = poiName(item);
+            if (n == null || n.isBlank() || seen.add(n)) out.add(item);
+        }
+        return out;
+    }
+
+    /** 取列表第 idx 个元素（越界循环取），列表空则返回 null */
+    private <T> T pick(List<T> list, int idx) {
+        if (list == null || list.isEmpty()) return null;
+        return list.get(Math.floorMod(idx, list.size()));
+    }
+
+    private <T> String poiName(T item) {
+        if (item instanceof PoiResult p) return p.getName();
+        if (item instanceof MealResult m) return m.getName();
+        return null;
+    }
+
+    private <T> boolean sameName(T a, T b) {
+        if (a == null || b == null) return false;
+        String na = poiName(a), nb = poiName(b);
+        return na != null && na.equals(nb);
+    }
+
+    private DayPlan.Activity activity(String time, String type, String name, String loc,
+                                      int dur, int cost, String note) {
+        return DayPlan.Activity.builder()
+                .time(time)
+                .type(type)
+                .name(name == null ? "" : name)
+                .location(loc == null ? "" : loc)
+                .duration(dur)
+                .cost(cost)
+                .notes(note)
+                .build();
     }
 }
