@@ -29,6 +29,9 @@ public class DayPlan {
     @JsonProperty("date")
     private String date;
 
+    @JsonProperty("theme")
+    private String theme;
+
     /**
      * 天气
      */
@@ -85,6 +88,9 @@ public class DayPlan {
          */
         @JsonProperty("location")
         private String location;
+
+        @JsonProperty("transport")
+        private String transport;
 
         /**
          * 预计时长（分钟）

@@ -12,54 +12,70 @@
 
     <artifactId>travel-web</artifactId>
     <name>travel-web</name>
-    <description>Web启动模块 - 聚合所有业务模块</description>
+    <description>Web 启动模块 - 聚合所有业务模块</description>
 
     <dependencies>
+        <!-- 认证模块 -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-module-auth-biz</artifactId>
+        </dependency>
+
+        <!-- 公共模块 -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-common</artifactId>
         </dependency>
+
+        <!-- Agent 模块 -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-module-agent-biz</artifactId>
         </dependency>
+
+        <!-- 行程模块 -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-module-itinerary-biz</artifactId>
         </dependency>
+
+        <!-- 用户模块 -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-module-user-biz</artifactId>
         </dependency>
 
-        <!-- A2A 运行时（Host Agent + 子Agent + 编排器） -->
+        <!-- A2A 运行时（Host Agent + 子 Agent + 编排器） -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-a2a-runtime</artifactId>
         </dependency>
 
-        <!-- MCP Server: Weather（8081） -->
+        <!-- MCP Server: Weather (8081) -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-mcp-server-weather</artifactId>
         </dependency>
-        <!-- MCP Server: POI（8082） -->
+
+        <!-- MCP Server: POI (8082) -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-mcp-server-poi</artifactId>
         </dependency>
-        <!-- MCP Server: Meal（8083） -->
+
+        <!-- MCP Server: Meal (8083) -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-mcp-server-meal</artifactId>
         </dependency>
-        <!-- MCP Server: Budget（8084） -->
+
+        <!-- MCP Server: Budget (8084) -->
         <dependency>
             <groupId>com.travel</groupId>
             <artifactId>travel-mcp-server-budget</artifactId>
         </dependency>
 
-        <!-- MySQL驱动 -->
+        <!-- MySQL 驱动 -->
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>

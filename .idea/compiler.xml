@@ -13,6 +13,7 @@
         <module name="travel-mcp-server-poi" />
         <module name="travel-module-agent-biz" />
         <module name="travel-common" />
+        <module name="travel-module-auth-biz" />
         <module name="travel-web" />
         <module name="travel-module-user-biz" />
         <module name="travel-a2a-runtime" />
@@ -35,6 +36,7 @@
       <module name="travel-mcp-server-poi" options="-parameters" />
       <module name="travel-mcp-server-weather" options="-parameters" />
       <module name="travel-module-agent-biz" options="-parameters" />
+      <module name="travel-module-auth-biz" options="-parameters" />
       <module name="travel-module-itinerary-biz" options="-parameters" />
       <module name="travel-module-mcp-biz" options="-parameters" />
       <module name="travel-module-user-biz" options="-parameters" />

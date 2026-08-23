@@ -22,6 +22,31 @@ spring:
     username: ${TRAVEL_DB_USERNAME:epiphany}
     password: ${TRAVEL_DB_PASSWORD:123456}
 
+  # QQ 邮箱 SMTP 配置 - 可发送至任何邮箱
+  mail:
+    host: ${QQ_MAIL_HOST:smtp.qq.com}
+    port: ${QQ_MAIL_PORT:465}
+    username: ${QQ_MAIL_USERNAME:}
+    password: ${QQ_MAIL_AUTH_CODE:}
+    protocol: smtp
+    default-encoding: UTF-8
+    # 关键配置：允许发件人地址与 username 不一致，支持发送到任意邮箱
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: false
+      mail.smtp.ssl.enable: true
+      mail.smtp.ssl.trust: smtp.qq.com
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+      mail.smtp.from: ${QQ_MAIL_USERNAME:}
+      mail.mime.charset: UTF-8
+      mail.smtp.allow8bitmime: true
+
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+
   sql:
     init:
       mode: never
@@ -29,7 +54,7 @@ spring:
   # Spring AI 配置 (智谱GLM-4-Flash) - API Key 从 application-local.yaml 或 ENV 注入
   ai:
     # 当前智谱 endpoint 在项目里 404，关闭重试让失败立刻回落到 deterministic 兜底解析，
-    # 避免每次回答都等待无谓的指数退避重试导致问卷“卡住”。
+    # 避免每次回答都等待无谓的指数退避重试导致问卷"卡住"。
     retry:
       max-attempts: 1
     openai:
@@ -94,3 +119,5 @@ gaode:
 logging:
   level:
     com.travel: INFO
+    # 开启邮件发送调试日志，排查问题时使用
+    org.springframework.mail: DEBUG

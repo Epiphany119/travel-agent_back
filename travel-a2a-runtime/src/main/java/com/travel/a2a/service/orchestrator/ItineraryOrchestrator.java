@@ -82,6 +82,12 @@ public class ItineraryOrchestrator {
 
             return TravelPlanResult.builder()
                     .success(true)
+                    .destination(request.getDestination())
+                    .days(request.getDays())
+                    .travelers(request.getTravelers())
+                    .travelStyle(request.getTravelStyle())
+                    .interests(request.getInterests())
+                    .strategyNotes(List.of("按天气调整户外与室内比例", "按区域串联地点，减少折返", "根据偏好平衡餐饮与景点预算"))
                     .dayPlans(dayPlans)
                     .dataWarnings(warnings)
                     .weather(weather)
@@ -237,15 +243,19 @@ public class ItineraryOrchestrator {
                                          BudgetEstimate budget) {
         List<DayPlan> dayPlans = new ArrayList<>();
         int days = request.getDays();
-        double dailyBudget = budget.isSuccess() ?
-                budget.getTotalBudget() / days : request.getBudget() / days;
+        double totalBudget = budget.isSuccess() && budget.getTotalBudget() > 0 ? budget.getTotalBudget() : request.getBudget();
+        double[] weights = {0.82, 1.08, 1.22, 0.94, 1.16};
+        double weightTotal = 0;
+        for (int i = 0; i < days; i++) weightTotal += weights[Math.min(i, weights.length - 1)];
 
         LocalDate startDate = LocalDate.now().plusDays(1);
 
         for (int i = 0; i < days; i++) {
+            double dailyBudget = Math.round(totalBudget * weights[Math.min(i, weights.length - 1)] / weightTotal);
             DayPlan.DayPlanBuilder dayPlanBuilder = DayPlan.builder()
                     .day(i + 1)
                     .date(startDate.plusDays(i).format(DATE_FORMATTER))
+                    .theme(themeFor(request, i))
                     .dailyBudget(dailyBudget);
 
             // 设置天气信息
@@ -263,6 +273,13 @@ public class ItineraryOrchestrator {
         }
 
         return dayPlans;
+    }
+
+    private String themeFor(TravelPlanRequest request, int day) {
+        String style = request.getTravelStyle();
+        if (style == null || style.isBlank()) style = "轻松漫游";
+        String[] themes = {"城市初见与核心地标", "在地文化与美食探索", "慢节奏收束与自由漫游"};
+        return themes[Math.min(day, themes.length - 1)] + " · " + style;
     }
 
     /**
@@ -327,10 +344,10 @@ public class ItineraryOrchestrator {
         return out;
     }
 
-    /** 取列表第 idx 个元素（越界循环取），列表空则返回 null */
+    /** 取列表第 idx 个元素；不循环复用，避免跨天重复地点。 */
     private <T> T pick(List<T> list, int idx) {
         if (list == null || list.isEmpty()) return null;
-        return list.get(Math.floorMod(idx, list.size()));
+        return idx >= 0 && idx < list.size() ? list.get(idx) : null;
     }
 
     private <T> String poiName(T item) {
@@ -352,6 +369,7 @@ public class ItineraryOrchestrator {
                 .type(type)
                 .name(name == null ? "" : name)
                 .location(loc == null ? "" : loc)
+                .transport(type.equals("rest") ? "返回酒店" : "公共交通 / 步行优先")
                 .duration(dur)
                 .cost(cost)
                 .notes(note)

@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.File;
 import java.math.BigDecimal;
@@ -29,9 +30,73 @@ public class UserBizService {
     private final UserPreferenceMapper userPreferenceMapper;
     private final UserProfileMapper userProfileMapper;
     private final UserTravelPreferenceMapper userTravelPreferenceMapper;
+    private final TravelNoteMapper travelNoteMapper;
     private final ImageStorageService imageStorageService;
+    private final JdbcTemplate jdbcTemplate;
 
     private final RestTemplate restTemplate = new RestTemplate();
+
+    public List<TravelNotePO> listTravelNotes(String userId) {
+        LambdaQueryWrapper<TravelNotePO> w = new LambdaQueryWrapper<>();
+        w.eq(TravelNotePO::getUserId, userId).orderByDesc(TravelNotePO::getUpdatedAt);
+        return travelNoteMapper.selectList(w);
+    }
+
+    public TravelNotePO getTravelNote(Long id) { return travelNoteMapper.selectById(id); }
+
+    public TravelNotePO getSharedTravelNote(String token) {
+        return travelNoteMapper.selectOne(new LambdaQueryWrapper<TravelNotePO>().eq(TravelNotePO::getShareToken, token).eq(TravelNotePO::getVisibility, "link"));
+    }
+
+    @Transactional
+    public TravelNotePO saveTravelNote(TravelNotePO note) {
+        if (note.getUserId() == null) note.setUserId("user_001");
+        if (note.getTemplateVersion() == null) note.setTemplateVersion(1);
+        if (note.getNoteType() == null) note.setNoteType("inspiration");
+        if (note.getSourceType() == null) note.setSourceType("manual");
+        if (note.getStatus() == null) note.setStatus("draft");
+        if (note.getVisibility() == null) note.setVisibility("private");
+        if (note.getContentJson() == null || note.getContentJson().isBlank()) note.setContentJson("{\"overview\":{},\"days\":[],\"budget\":{\"items\":[]},\"strategies\":[],\"reminders\":[]}");
+        if (note.getShareToken() == null && "link".equals(note.getVisibility())) note.setShareToken(UUID.randomUUID().toString().replace("-", ""));
+        if (note.getId() == null) travelNoteMapper.insert(note); else travelNoteMapper.updateById(note);
+        return note;
+    }
+
+    @Transactional
+    public TravelNotePO copyTravelNote(Long id, String userId) {
+        TravelNotePO src = travelNoteMapper.selectById(id);
+        if (src == null) return null;
+        src.setId(null); src.setUserId(userId == null ? "user_001" : userId); src.setSourceType("copy"); src.setStatus("draft"); src.setVisibility("private"); src.setShareToken(null); src.setTitle(src.getTitle() + " · 副本");
+        return saveTravelNote(src);
+    }
+
+    public void deleteTravelNote(Long id) { travelNoteMapper.deleteById(id); }
+
+    public List<Map<String,Object>> searchUsers(String q) {
+        String key = q == null ? "" : q.trim();
+        return jdbcTemplate.queryForList("SELECT public_id, nickname, avatar FROM user_profile WHERE public_id LIKE ? OR nickname LIKE ? LIMIT 20", "%" + key + "%", "%" + key + "%");
+    }
+    public List<Map<String,Object>> listPublicNotes(int page, int size) {
+        int offset = Math.max(0, page) * Math.min(size, 50);
+        return jdbcTemplate.queryForList("SELECT id,user_id,title,content,cover_url,like_count,comment_count,favorite_count,created_at FROM social_note WHERE visibility='public' AND status='published' ORDER BY created_at DESC LIMIT ? OFFSET ?", Math.min(size, 50), offset);
+    }
+    public Map<String,Object> getPublicNote(Long id) {
+        List<Map<String,Object>> rows = jdbcTemplate.queryForList("SELECT * FROM social_note WHERE id=? AND visibility='public'", id);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+    @Transactional public void reactNote(Long noteId, String userId, String type) {
+        int exists = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM social_reaction WHERE note_id=? AND user_id=? AND reaction_type=?", Integer.class, noteId, userId, type);
+        String count = "like".equals(type) ? "like_count" : "favorite_count";
+        if (exists == 0) { jdbcTemplate.update("INSERT INTO social_reaction(note_id,user_id,reaction_type) VALUES(?,?,?)", noteId,userId,type); jdbcTemplate.update("UPDATE social_note SET " + count + "=" + count + "+1 WHERE id=?", noteId); }
+        else { jdbcTemplate.update("DELETE FROM social_reaction WHERE note_id=? AND user_id=? AND reaction_type=?", noteId,userId,type); jdbcTemplate.update("UPDATE social_note SET " + count + "=GREATEST(" + count + "-1,0) WHERE id=?", noteId); }
+    }
+    public void addComment(Long noteId, String userId, String content) { jdbcTemplate.update("INSERT INTO social_comment(note_id,user_id,content) VALUES(?,?,?)", noteId,userId,content); jdbcTemplate.update("UPDATE social_note SET comment_count=comment_count+1 WHERE id=?", noteId); }
+    public List<Map<String,Object>> listComments(Long noteId) { return jdbcTemplate.queryForList("SELECT * FROM social_comment WHERE note_id=? ORDER BY created_at ASC", noteId); }
+    public void requestFriend(String from, String to, String message) { jdbcTemplate.update("INSERT INTO social_friend_request(requester_id,receiver_id,message) VALUES(?,?,?) ON DUPLICATE KEY UPDATE status='pending',message=VALUES(message)", from,to,message == null ? "" : message); }
+    public Map<String,Object> publishSocialNote(Map<String,Object> body) {
+        jdbcTemplate.update("INSERT INTO social_note(user_id,travel_note_id,title,content,cover_url) VALUES(?,?,?,?,?)", body.getOrDefault("userId","user_001"), body.get("travelNoteId"), body.getOrDefault("title","旅行笔记"), body.getOrDefault("content",""), body.getOrDefault("coverUrl",""));
+        return Map.of("published", true);
+    }
 
     @Value("${travel.amap.api-key:}")
     private String amapApiKey;

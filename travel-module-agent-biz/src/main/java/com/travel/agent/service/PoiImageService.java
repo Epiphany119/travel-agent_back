@@ -40,6 +40,12 @@ public class PoiImageService {
             return List.of();
         }
         try {
+            // 1) 文本搜索：优先直接取 response 里自带的 photos（很多 POI 文本搜索就有图）
+            List<String> photos = searchPhotos(name, city);
+            if (!photos.isEmpty()) {
+                return photos;
+            }
+            // 2) 文本搜索没图则用 id 走详情接口兜底
             String poiId = searchPoiId(name, city);
             if (poiId == null) {
                 log.debug("未找到 POI: name={}, city={}", name, safe(city));
@@ -53,6 +59,20 @@ public class PoiImageService {
     }
 
     private String searchPoiId(String keywords, String city) {
+        JsonNode poi = searchFirst(keywords, city);
+        if (poi == null) return null;
+        String id = poi.path("id").asText(null);
+        return (id == null || id.isBlank()) ? null : id;
+    }
+
+    /** 文本搜索取第一个 POI 自带 photos（最多 3 张） */
+    private List<String> searchPhotos(String keywords, String city) {
+        JsonNode poi = searchFirst(keywords, city);
+        if (poi == null) return List.of();
+        return collectPhotos(poi.path("photos"));
+    }
+
+    private JsonNode searchFirst(String keywords, String city) {
         String url = UriComponentsBuilder.fromHttpUrl(TEXT_SEARCH_URL)
                 .queryParam("key", apiKey)
                 .queryParam("keywords", keywords)
@@ -71,8 +91,7 @@ public class PoiImageService {
         if (pois == null || !pois.isArray() || pois.isEmpty()) {
             return null;
         }
-        String id = pois.get(0).path("id").asText(null);
-        return (id == null || id.isBlank()) ? null : id;
+        return pois.get(0);
     }
 
     private List<String> fetchDetailPhotos(String poiId) {
@@ -90,12 +109,17 @@ public class PoiImageService {
         if (pois == null || !pois.isArray() || pois.isEmpty()) {
             return List.of();
         }
-        JsonNode photos = pois.get(0).path("photos");
+        return collectPhotos(pois.get(0).path("photos"));
+    }
+
+    /** 从高德 photos 节点提取 url，去重、最多 MAX_IMAGES 张 */
+    private List<String> collectPhotos(JsonNode photos) {
         List<String> urls = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         if (photos != null && photos.isArray()) {
             for (JsonNode p : photos) {
                 String u = p.path("url").asText(null);
-                if (u != null && !u.isBlank()) {
+                if (u != null && !u.isBlank() && seen.add(u)) {
                     urls.add(u);
                     if (urls.size() >= MAX_IMAGES) break;
                 }

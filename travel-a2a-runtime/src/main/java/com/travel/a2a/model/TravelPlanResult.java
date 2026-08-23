@@ -17,6 +17,19 @@ import java.util.List;
 @AllArgsConstructor
 public class TravelPlanResult {
 
+    @JsonProperty("destination")
+    private String destination;
+    @JsonProperty("days")
+    private int days;
+    @JsonProperty("travelers")
+    private int travelers;
+    @JsonProperty("travelStyle")
+    private String travelStyle;
+    @JsonProperty("interests")
+    private List<String> interests;
+    @JsonProperty("strategyNotes")
+    private List<String> strategyNotes;
+
     /**
      * 是否成功
      */

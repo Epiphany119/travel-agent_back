@@ -125,6 +125,10 @@ public class HostAgentService {
 
             // 6. 使用LLM优化行程
             String finalPlan = optimizeWithLLM(result);
+            if (!isUsablePlan(finalPlan, result)) {
+                log.warn("LLM计划质量不足，使用结构化行程兜底: length={}", finalPlan == null ? 0 : finalPlan.length());
+                finalPlan = buildDeterministicPlan(result);
+            }
 
             // 分段发送最终行程
             if (finalPlan != null && !finalPlan.isEmpty()) {
@@ -156,7 +160,7 @@ public class HostAgentService {
         try {
             String systemPrompt =
                     "你是一个专业的旅行规划助手，擅长根据收集到的旅行数据生成精美的行程规划。\n\n" +
-                    "请根据以下数据，为用户生成一份详细的行程规划：\n\n" +
+                    "请根据以下数据，为用户生成一份详细且可执行的行程规划。禁止只写概述或泛泛而谈，必须完整覆盖所有天数和所有活动。\n\n" +
                     "1. 根据天气数据，给出穿着建议和出行提示\n" +
                     "2. 根据景点信息，安排合理的游览顺序\n" +
                     "3. 根据餐厅信息，推荐每日的早中晚餐\n" +
@@ -167,7 +171,7 @@ public class HostAgentService {
                     "- 推荐景点及简介\n" +
                     "- 餐饮推荐\n" +
                     "- 穿着和注意事项\n\n" +
-                    "语气要友好、专业，行程要切实可行。";
+                    "语气要友好、专业，行程要切实可行。每一天至少输出：主题、天气、预算、4条带时间的活动、地点、交通、停留时长、费用和推荐理由；总长度不少于1500字。";
 
             StringBuilder userMessage = new StringBuilder();
             userMessage.append("目的地：").append(result.getWeather() != null ?
@@ -213,6 +217,32 @@ public class HostAgentService {
         }
 
         return null;
+    }
+
+    private boolean isUsablePlan(String content, TravelPlanResult result) {
+        if (content == null || content.length() < Math.max(900, (result.getDayPlans() == null ? 1 : result.getDayPlans().size()) * 280)) return false;
+        int days = result.getDayPlans() == null ? 0 : result.getDayPlans().size();
+        for (int i = 1; i <= days; i++) if (!(content.contains("第" + i + "天") || content.contains("Day " + i))) return false;
+        return content.contains("09:") || content.contains("上午");
+    }
+
+    /** 不依赖 LLM 的完整兜底，确保 API 永远返回可执行的每日计划。 */
+    private String buildDeterministicPlan(TravelPlanResult result) {
+        StringBuilder out = new StringBuilder("# ✨ Roamly 私人旅行方案\n\n");
+        String city = result.getDestination() == null ? (result.getWeather() == null ? "目的地" : result.getWeather().getCity()) : result.getDestination();
+        out.append(city).append(" · " ).append(result.getDayPlans() == null ? 0 : result.getDayPlans().size()).append("日可执行行程\n\n");
+        if (result.getStrategyNotes() != null) { out.append("## AI 旅行策略\n"); for (String n : result.getStrategyNotes()) out.append("- ").append(n).append("\n"); out.append("\n"); }
+        if (result.getDayPlans() != null) for (DayPlan day : result.getDayPlans()) {
+            out.append("## 第").append(day.getDay()).append("天 · ").append(day.getTheme() == null ? "城市探索" : day.getTheme()).append("\n");
+            out.append("日期：").append(day.getDate()).append("  |  天气：").append(day.getWeather()).append(" ").append(day.getTemperature()).append("  |  今日预算：¥").append(Math.round(day.getDailyBudget())).append("\n\n");
+            if (day.getActivities() != null) for (DayPlan.Activity a : day.getActivities()) {
+                out.append("### " ).append(a.getTime()).append(" · " ).append(a.getName()).append("\n");
+                out.append("- 地点：").append(a.getLocation()).append("\n- 交通：").append(a.getTransport()).append("\n- 停留：").append(a.getDuration()).append(" 分钟\n- 预计费用：¥").append(Math.round(a.getCost())).append("\n- 推荐理由：").append(a.getNotes()).append("\n\n");
+            }
+            out.append("**今日执行建议：** 按时间顺序出发，地点之间优先使用公共交通或步行；如遇天气变化，优先替换为室内活动。\n\n");
+        }
+        out.append("## 出行提醒\n- 出发前确认开放时间、预约和天气。\n- 每天保留机动时间，不建议跨区域折返。\n");
+        return out.toString();
     }
 
     /**
