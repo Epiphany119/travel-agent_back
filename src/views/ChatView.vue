@@ -2,6 +2,7 @@
 import { ref, computed, watch, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { addInspiration, addJourney, USER_ID, saveJourneyPoints, saveTravelNote } from '@/api/user'
 import { marked } from 'marked'
 import { subscribeA2AStream, fetchPoiImages, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
@@ -15,19 +16,35 @@ const userStore = useUserStore()
 // 地点/餐厅图片懒加载缓存（按名称）
 const imageMap = reactive(new Map<string, string[]>())
 const imagePending = reactive(new Map<string, boolean>())
+const imageQueue: Array<{ name: string; city: string }> = []
+let imageQueueRunning = false
+const normalizePoiName = (name: string) => name.replace(/[（(].*?[）)]/g, '').replace(/^在/, '').trim()
 function loadImages(name: string, city: string) {
-  if (!name || imagePending.get(name) || imageMap.has(name)) return
-  imagePending.set(name, true)
-  fetchPoiImages(name, city)
-    .then((res) => { imageMap.set(name, res?.imageUrls || []) })
-    .catch(() => { imageMap.set(name, []) })
-    .finally(() => imagePending.set(name, false))
+  const key = normalizePoiName(name)
+  if (!key || imagePending.get(key) || imageMap.has(key)) return
+  imagePending.set(key, true)
+  imageQueue.push({ name: key, city })
+  void drainImageQueue()
 }
-function imagesOf(name: string): string[] { return imageMap.get(name) || [] }
+async function drainImageQueue() {
+  if (imageQueueRunning) return
+  imageQueueRunning = true
+  while (imageQueue.length) {
+    const item = imageQueue.shift()!
+    try {
+      const res = await fetchPoiImages(item.name, item.city)
+      imageMap.set(item.name, (res?.imageUrls || []).filter((u) => /^https?:\/\//.test(u)))
+    } catch { imageMap.set(item.name, []) }
+    finally { imagePending.set(item.name, false) }
+  }
+  imageQueueRunning = false
+}
+function imagesOf(name: string): string[] { return imageMap.get(normalizePoiName(name)) || [] }
 function onImgError(name: string) {
-  const cur = imageMap.get(name)
-  if (cur && cur.length > 1) imageMap.set(name, cur.slice(1))
-  else if (cur) imageMap.set(name, [])
+  const key = normalizePoiName(name)
+  const cur = imageMap.get(key)
+  if (cur && cur.length > 1) imageMap.set(key, cur.slice(1))
+  else if (cur) imageMap.set(key, [])
 }
 
 // 结构化每日行程（地点 type='sightseeing'、餐厅 type='meal'、休息 type='rest'）
@@ -48,6 +65,36 @@ const activeDay = ref(0)
 const globalWeather = ref<any>(null)
 const styles = ['轻松漫游', '深度人文', '美食优先', '亲子友好']
 const interestOptions = ['美食', '人文', '自然', '摄影', '购物', '夜生活']
+const preferenceSummary = computed(() => `${travelers.value}人 · ¥${budget.value.toLocaleString()}预算 · ${travelStyle.value} · ${interests.value.length ? interests.value.join(' + ') : '综合体验'}`)
+const agentSteps = computed(() => [
+  { icon: '☀', title: '天气适配', text: globalWeather.value ? '根据天气调整户外与室内比例' : '结合当地天气安排每日节奏' },
+  { icon: '🍜', title: '偏好匹配', text: interests.value.includes('美食') ? '优先筛选本地餐饮，控制排队时间' : '按你的兴趣筛选体验项目' },
+  { icon: '↗', title: '路线优化', text: '按区域串联地点，减少折返与通勤' },
+  { icon: '¥', title: '预算平衡', text: `控制在 ¥${budget.value.toLocaleString()} 总预算内` }
+])
+const totalPlanCost = computed(() => structuredDays.value.flat().reduce((sum, item) => sum + (item.cost || 0), 0))
+const scheduleDialog = ref(false)
+const scheduling = ref(false)
+async function addToSchedule(target: 'inspiration' | 'journey') {
+  if (scheduling.value) return
+  scheduling.value = true
+  try {
+    const result: any = travelPlan.value || { destination: destination.value }
+    const noteContent = { overview: { destination: result.destination || destination.value, preferences: preferenceSummary.value }, strategies: agentSteps.value.map(s => ({ title: s.title, text: s.text })), budget: { total: totalPlanCost.value || budget.value, items: [] }, days: structuredDays.value.map((items: any[], i: number) => ({ day: i + 1, items })), reminders: [], packing: [], reflections: {} }
+    await saveTravelNote({ userId: USER_ID, title: `${result.destination || destination.value} · ${days.value}日旅行计划`, destination: result.destination || destination.value, noteType: target, sourceType: 'agent', totalDays: days.value, travelers: travelers.value, budget: totalPlanCost.value || budget.value, contentJson: JSON.stringify(noteContent), status: target === 'journey' ? 'planned' : 'draft' })
+    if (target === 'inspiration') {
+      await addInspiration({ userId: USER_ID, name: result.destination || destination.value, description: 'Roamly 为你生成的旅行方案', quote: preferenceSummary.value, estimatedBudget: totalPlanCost.value || budget.value, status: 0 })
+    } else {
+      const start = new Date(); start.setDate(start.getDate() + 1)
+      const end = new Date(start); end.setDate(start.getDate() + days.value - 1)
+      const points = structuredDays.value.flat().filter((a: any) => a.type === 'sightseeing').map((a: any, i: number) => ({ name: a.name, visitDate: a.time, description: a.notes || a.location, sortOrder: i }))
+      const created = await addJourney({ userId: USER_ID, destination: result.destination || destination.value, totalDays: days.value, startDate: start.toISOString().slice(0,10), endDate: end.toISOString().slice(0,10), totalCost: totalPlanCost.value || budget.value, summary: preferenceSummary.value, travelType: travelStyle.value, status: 1 })
+      if (created.data?.id && points.length) await saveJourneyPoints(created.data.id, points)
+    }
+    scheduleDialog.value = false
+    ElMessage.success(target === 'inspiration' ? '已加入灵感目的地' : '已加入我的旅程')
+  } catch { ElMessage.error('加入失败，请稍后重试') } finally { scheduling.value = false }
+}
 
 // 与 AgentPanel.vue 保持一致的 dayTabs 结构，统一渲染
 const dayTabs = computed(() => {
@@ -93,16 +140,27 @@ const daySections = computed<string[]>(() => {
   return out
 })
 
-// 把当天出现的地点/餐厅名称用橙色 span 高亮，让 markdown 正文里更醒目
+// 稳定地把叙述中的地点/餐厅标橙：
+// 1) 优先精确匹配已知名称；2) 对"标签：地点"或"时间：地点"行，把冒号后的短地点内容标橙。
 function highlightNames(md: string, names: string[]): string {
-  if (!md || !names.length) return md
+  if (!md) return md
   const uniq = [...new Set(names.filter((n): n is string => !!n && n.length >= 2))]
     .sort((a, b) => b.length - a.length)
-  let out = md
-  for (const n of uniq) {
-    out = out.split(n).join(`<span class="nav-hl">${n}</span>`)
-  }
-  return out
+
+  return md.split('\n').map((line) => {
+    const trimmed = line.trim()
+    // 标题/列表项不做行级高亮（避免整行变橙）
+    const isHeading = /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.startsWith('>')
+    let out = line
+    // 1) 名称匹配（任何位置）
+    if (uniq.length && !isHeading) {
+      for (const n of uniq) {
+        const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        out = out.replace(new RegExp(escaped, 'g'), `<span class="nav-hl">${n}</span>`)
+      }
+    }
+    return out
+  }).join('\n')
 }
 
 // 行程就绪后，按地点/餐厅名称懒加载图片
@@ -123,6 +181,7 @@ async function generateStream() {
   streamStore.reset()
   imageMap.clear()
   imagePending.clear()
+  imageQueue.splice(0, imageQueue.length)
   structuredDays.value = []
   streamStore.isStreaming = true
   travelPlan.value = null
@@ -221,6 +280,7 @@ async function generateStream() {
             name: a.name || '',
             location: a.location || '',
             time: a.time || '',
+            transport: a.transport || a.travelMode || '',
             notes: a.notes || '',
             cost: Math.round(a.cost || 0),
             duration: a.duration ? Math.round(a.duration / 60) : 0
@@ -396,7 +456,7 @@ function getMealType(time: string): string {
         <div>
           <p class="eyebrow">{{ streamStore.isStreaming ? 'STREAMING OUTPUT' : 'YOUR ITINERARY' }}</p>
           <h2>{{ destination }} · {{ days }} 天旅程</h2>
-          <p>{{ streamStore.isStreaming ? 'AI 实时生成中，请稍候…' : 'AI 已为你生成完整行程' }}</p>
+          <p>{{ streamStore.isStreaming ? 'Roamly 正在替你完成一次旅行规划' : 'Roamly 已把偏好、天气、路线和预算整理成可执行方案' }}</p>
         </div>
         <div class="budget">
           <span>预算</span>
@@ -405,13 +465,12 @@ function getMealType(time: string): string {
         </div>
       </div>
 
-      <!-- 工具调用进度（流式中） -->
-      <div v-if="streamStore.toolCalls.length > 0" class="tool-progress">
-        <div v-for="(tool, idx) in streamStore.toolCalls" :key="idx" class="tool-calling">
-          <span :class="['tool-badge', streamStore.isStreaming ? 'tool-badge--calling' : 'tool-badge--done']">
-            <span v-if="streamStore.isStreaming" class="loading-dot"></span>
-            {{ streamStore.isStreaming ? '🔧 调用中' : '✅ 已完成' }}: {{ tool.name }}
-          </span>
+      <div class="agent-status">
+        <div class="agent-status-head"><span>✦ Roamly 私人旅行管家</span><small>{{ streamStore.isStreaming ? '正在规划…' : '规划完成' }}</small></div>
+        <div class="agent-step-grid">
+          <div v-for="step in agentSteps" :key="step.title" class="agent-step">
+            <span class="agent-step-icon">{{ step.icon }}</span><div><b>{{ step.title }}</b><p>{{ step.text }}</p></div>
+          </div>
         </div>
       </div>
 
@@ -421,7 +480,20 @@ function getMealType(time: string): string {
       <!-- ─── Tab + Markdown 计划展示（与 AgentPanel.vue 一致） ─────────────── -->
       <div v-if="dayTabs.length > 0" class="plan-section">
         <div class="plan-head">
-          <h3>{{ destination }} · {{ dayTabs.length }} 天</h3>
+          <div><p class="eyebrow">YOUR PERSONAL TRIP</p><h3>{{ destination }} · {{ dayTabs.length }}日慢旅行</h3><p class="plan-preferences">{{ preferenceSummary }}</p></div>
+          <span class="plan-cost" v-if="totalPlanCost">已规划 ¥{{ totalPlanCost.toLocaleString() }}</span>
+          <button class="schedule-btn" @click="scheduleDialog = true">＋ 提上日程</button>
+        </div>
+        <el-dialog v-model="scheduleDialog" title="把这份计划放进你的旅行" width="420px">
+          <p class="schedule-copy">选择保存位置，之后可以继续编辑、补充照片和执行打卡。</p>
+          <div class="schedule-options">
+            <button :disabled="scheduling" @click="addToSchedule('inspiration')"><b>◎ 灵感目的地</b><small>以后去 · 保存想去的目的地和方案</small></button>
+            <button :disabled="scheduling" @click="addToSchedule('journey')"><b>◉ 我的旅程</b><small>即将去 · 创建可执行的旅行记录</small></button>
+          </div>
+        </el-dialog>
+        <div class="decision-panel">
+          <div><span class="decision-kicker">AI 旅行策略</span><strong>{{ travelStyle }} × {{ interests.length ? interests.join(' · ') : '综合体验' }}</strong></div>
+          <p>每天安排 2–4 个核心地点，优先按区域串联；你可以直接按时间轴出发，也可以替换任意一个地点。</p>
         </div>
 
         <!-- 按天 Tabs -->
@@ -462,6 +534,7 @@ function getMealType(time: string): string {
                     <h4 :class="slot.type === 'sightseeing' ? 'itin-place' : 'itin-food'">{{ slot.name }}</h4>
                   </div>
                   <div v-if="slot.location" class="itin-loc">📍 {{ slot.location }}</div>
+                  <div v-if="slot.transport" class="itin-loc">↗ {{ slot.transport }}</div>
                   <div v-if="slot.notes" class="itin-note">{{ slot.notes }}</div>
                   <div v-if="slot.cost || slot.duration" class="itin-meta">
                     <span v-if="slot.duration">⏱ {{ slot.duration }} 小时</span>
@@ -987,6 +1060,30 @@ function getMealType(time: string): string {
   li { margin-bottom: 4px; }
 }
 
+.agent-status { margin: 18px 0 22px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(135deg,#fffdf8,#f8fbf7); }
+.agent-status-head { display:flex; justify-content:space-between; align-items:center; color:var(--ink); font-weight:800; }
+.agent-status-head small { color:var(--forest); font-weight:700; }
+.agent-step-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:14px; }
+.agent-step { display:flex; gap:9px; min-width:0; }
+.agent-step-icon { display:grid; place-items:center; width:28px; height:28px; flex:none; border-radius:9px; background:var(--sunset-soft); color:var(--sunset); font-weight:800; }
+.agent-step b { font-size:12px; color:var(--ink); }
+.agent-step p { margin:3px 0 0; color:var(--ink-2); font-size:11px; line-height:1.45; }
+.plan-preferences { margin:4px 0 0; color:var(--ink-2); font-size:12px; }
+.plan-cost { color:var(--forest); font-size:12px; font-weight:800; white-space:nowrap; }
+.schedule-btn { border:1px solid var(--sunset); background:var(--sunset); color:#fff; border-radius:9px; padding:8px 12px; font-size:12px; font-weight:800; cursor:pointer; }
+.schedule-copy { color:var(--ink-2); font-size:13px; margin-top:0; }
+.schedule-options { display:grid; gap:10px; }
+.schedule-options button { text-align:left; border:1px solid var(--line); background:#fff; border-radius:12px; padding:14px; cursor:pointer; }
+.schedule-options button:hover { border-color:var(--sunset); background:var(--sunset-soft); }
+.schedule-options b, .schedule-options small { display:block; }
+.schedule-options b { color:var(--ink); font-size:14px; }
+.schedule-options small { margin-top:4px; color:var(--ink-2); font-size:12px; }
+.decision-panel { display:flex; justify-content:space-between; gap:20px; margin:0 0 16px; padding:14px 16px; border-left:3px solid var(--sunset); background:var(--sunset-soft); border-radius:0 12px 12px 0; }
+.decision-panel strong { display:block; margin-top:4px; color:var(--ink); }
+.decision-panel p { max-width:480px; margin:0; color:var(--ink-2); font-size:12px; line-height:1.6; }
+.decision-kicker { color:var(--sunset); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+@media (max-width: 700px) { .agent-step-grid { grid-template-columns:repeat(2,1fr); } .decision-panel { display:block; } .decision-panel p { margin-top:8px; } .plan-head { align-items:flex-start; } }
+
 /* 当天详细行程与上方卡片/概览的距离 */
 .day-narrative { margin-top: 14px; }
 
@@ -1019,12 +1116,15 @@ function getMealType(time: string): string {
   flex-shrink: 0; font-size: 11px; font-weight: 800; color: #fff;
   background: var(--ink-3); padding: 2px 9px; border-radius: 20px;
 }
-/* 地点名称：橙色醒目 */
+/* 景点：橙色醒目 */
 .itin-place {
   margin: 0; font-size: 16px; font-weight: 800; color: var(--sunset);
   line-height: 1.3;
 }
-.itin-food { margin: 0; font-size: 15px; font-weight: 700; color: var(--forest); line-height: 1.3; }
+/* 餐厅：同样橙色（与景点一致，用户要求统一点缀色） */
+.itin-food {
+  margin: 0; font-size: 15px; font-weight: 800; color: var(--sunset); line-height: 1.3;
+}
 .itin-loc { color: var(--ink-2); font-size: 12px; margin-bottom: 3px; }
 .itin-note { color: #6e7d77; font-size: 12px; line-height: 1.6; margin-bottom: 6px; }
 

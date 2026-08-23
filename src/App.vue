@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <router-view v-if="isAuthPage" />
+  <div v-else class="app-layout">
     <AppSidebar />
     <div class="app-main">
       <AppHeader />
@@ -9,8 +10,13 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
+
+const route = useRoute()
+const isAuthPage = computed(() => route.path === '/auth' || route.path.startsWith('/auth/'))
 </script>
 
 <style>

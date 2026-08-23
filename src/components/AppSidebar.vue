@@ -24,14 +24,16 @@ const icons: Record<string, string> = {
 }
 
 const navMain: NavItem[] = [
-  { path: '/', label: '旅行计划', icon: 'compass' },
+  { path: '/explore', label: '发现灵感', icon: 'compass' },
+  { path: '/', label: 'AI 旅行规划', icon: 'chat' },
   { path: '/inspirations', label: '灵感目的地', icon: 'star' },
   { path: '/journeys', label: '我的旅程', icon: 'map' }
 ]
 
 const navMore: NavItem[] = [
+  { path: '/users/search', label: '寻找同好', icon: 'star' },
   { path: '/journey-map', label: '足迹地图', icon: 'flag' },
-  { path: '/agent-panel', label: 'Agent 规划', icon: 'chat' }
+  { path: '/agent-panel', label: '互动式规划', icon: 'chat' }
 ]
 
 function isActive(item: NavItem) {
@@ -47,12 +49,6 @@ const avatarStyle = computed(() => {
 })
 
 const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0))
-
-// 调试：监控昵称变化
-import { watchEffect } from 'vue'
-watchEffect(() => {
-  console.log('[Sidebar] nickname:', userStore.nickname, 'avatar:', userStore.avatar)
-})
 </script>
 
 <template>
@@ -91,6 +87,7 @@ watchEffect(() => {
     </nav>
 
     <div class="side-foot">
+      <!-- 用户卡片 -->
       <a class="user" @click="router.push('/profile')">
         <span class="user-avatar" :style="avatarStyle">
           <span v-if="!userStore.avatar" class="fallback">{{ avatarFallback }}</span>
@@ -122,7 +119,6 @@ watchEffect(() => {
   overflow-x: hidden;
 }
 
-/* 品牌：Roamly Logo（高度 32px）+ Wordmark */
 .brand {
   display: flex;
   align-items: center;
@@ -144,7 +140,6 @@ watchEffect(() => {
   color: #FFFDF8;
 }
 
-/* 分组标签 */
 .group-label {
   color: #7FA294;
   font-size: 10px;
@@ -195,10 +190,12 @@ watchEffect(() => {
   :deep(svg) { width: 19px; height: 19px; }
 }
 
-/* 底部用户卡片 */
 .side-foot {
   margin-top: auto;
   padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .user {
@@ -257,7 +254,6 @@ watchEffect(() => {
   flex-shrink: 0;
 }
 
-/* 移动端：收窄为图标栏 */
 @media (max-width: 860px) {
   .sidebar { width: 68px; padding: 18px 10px; }
   .brand { justify-content: center; padding: 4px 0 18px; }

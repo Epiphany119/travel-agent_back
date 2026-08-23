@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
-import { subscribeA2AStream, type TravelPlan } from '@/api/agent'
+import { subscribeA2AStream, fetchPoiImages, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
 
 interface ChatMsg {
@@ -22,6 +22,19 @@ const activeDay = ref(0)
 const scrollBox = ref<HTMLElement | null>(null)
 const inputBox = ref<HTMLInputElement | null>(null)
 const streamStore = useStreamStore()
+const imageMap = ref<Record<string, string>>({})
+const currentActivities = computed(() => plan.value?.dayPlans?.[activeDay.value]?.activities || [])
+async function loadActivityImages(activities: any[]) {
+  for (const activity of activities) {
+    if (!activity?.name || activity.type === 'rest' || imageMap.value[activity.name]) continue
+    try {
+      const res = await fetchPoiImages(activity.name, plan.value?.destination)
+      const url = (res?.imageUrls || []).find((u: string) => !Object.values(imageMap.value).includes(u))
+      if (url) imageMap.value[activity.name] = url
+    } catch { /* image is optional */ }
+  }
+}
+watch(currentActivities, (items) => { void loadActivityImages(items) }, { deep: true })
 
 let cancelStream: (() => void) | null = null
 
@@ -54,9 +67,9 @@ const dayTabs = computed(() => {
       const evening = activities.filter((a: any) => withTime(a) && a.time >= '18:00')
       if (!morning.length && !afternoon.length && !evening.length && activities.length) {
         const third = Math.ceil(activities.length / 3)
-        activities.slice(0, third).forEach(a => morning.push(a))
-        activities.slice(third, third * 2).forEach(a => afternoon.push(a))
-        activities.slice(third * 2).forEach(a => evening.push(a))
+        activities.slice(0, third).forEach((a: any) => morning.push(a))
+        activities.slice(third, third * 2).forEach((a: any) => afternoon.push(a))
+        activities.slice(third * 2).forEach((a: any) => evening.push(a))
       }
 
       const fmt = (a: any) =>
@@ -242,7 +255,7 @@ function runA2APlan() {
   })
 }
 
-const optionChips = computed(() => currentQuestion.value.options)
+const optionChips = computed(() => currentQuestion.value?.options || [])
 </script>
 
 <template>
@@ -323,6 +336,13 @@ const optionChips = computed(() => currentQuestion.value.options)
                   <span>💰</span>
                   <span>¥{{ dayTabs[activeDay].budget }}</span>
                 </div>
+              </div>
+
+              <div v-if="currentActivities.length" class="activity-cards">
+                <article v-for="(activity, ai) in currentActivities" :key="ai" class="activity-card">
+                  <img v-if="imageMap[activity.name]" :src="imageMap[activity.name]" :alt="activity.name" loading="lazy" />
+                  <div class="activity-card-body"><span>{{ activity.time || '行程' }}</span><h4>{{ activity.name }}</h4><p>{{ activity.location || activity.notes }}</p><small>⏱ {{ activity.duration ? Math.round(activity.duration / 60) : 1 }} 小时 · ¥{{ activity.cost || 0 }}</small></div>
+                </article>
               </div>
 
               <!-- Markdown 渲染 -->
@@ -583,6 +603,14 @@ const optionChips = computed(() => currentQuestion.value.options)
 }
 
 .plan-empty { text-align: center; padding: 24px; color: #98a59f; font-size: 13px; }
+.activity-cards { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+.activity-card { display:flex; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#fff; }
+.activity-card img { width:112px; min-height:92px; object-fit:cover; }
+.activity-card-body { padding:10px 12px; min-width:0; }
+.activity-card-body > span { color:var(--forest); font-size:11px; font-weight:800; }
+.activity-card h4 { margin:3px 0; color:var(--sunset); font-size:15px; }
+.activity-card p { margin:0 0 5px; color:#687873; font-size:12px; }
+.activity-card small { color:#87938e; font-size:11px; }
 
 /* ─── 完整行程正文 ─────────────────────────────────────── */
 .plan-detail {
