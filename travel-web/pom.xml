@@ -45,6 +45,12 @@
             <artifactId>travel-module-user-biz</artifactId>
         </dependency>
 
+        <!-- 旅行笔记模块 -->
+        <dependency>
+            <groupId>com.travel</groupId>
+            <artifactId>travel-module-note-biz</artifactId>
+        </dependency>
+
         <!-- A2A 运行时（Host Agent + 子 Agent + 编排器） -->
         <dependency>
             <groupId>com.travel</groupId>

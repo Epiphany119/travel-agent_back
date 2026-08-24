@@ -17,52 +17,37 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class UserPreferenceApplicationService {
-    
+
     private final UserPreferenceRepository preferenceRepository;
-    
-    /**
-     * 获取用户偏好
-     */
+
+    /** 获取用户偏好 */
     public UserPreferenceResponse getPreference(String userId, String preferenceType) {
         if (preferenceType == null || preferenceType.isBlank()) {
             preferenceType = "default";
         }
-        
         UserTravelPreference preference = preferenceRepository.findByUserIdAndType(userId, preferenceType);
-        if (preference == null) {
-            return null;
-        }
-        
-        return toResponse(preference);
+        return preference != null ? toResponse(preference) : null;
     }
-    
-    /**
-     * 获取用户所有偏好
-     */
+
+    /** 获取用户所有偏好 */
     public List<UserPreferenceResponse> getAllPreferences(String userId) {
         List<UserTravelPreference> preferences = preferenceRepository.findByUserId(userId);
-        return preferences.stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+        return preferences.stream().map(this::toResponse).collect(Collectors.toList());
     }
-    
-    /**
-     * 获取用户默认偏好
-     */
+
+    /** 获取用户默认偏好 */
     public UserPreferenceResponse getDefaultPreference(String userId) {
         UserTravelPreference preference = preferenceRepository.findDefaultPreference(userId);
         return preference != null ? toResponse(preference) : null;
     }
-    
-    /**
-     * 保存用户偏好
-     */
+
+    /** 保存用户偏好 */
     public UserPreferenceResponse savePreference(String userId, UserPreferenceRequest request) {
         String preferenceType = request.getPreferenceName() != null && !request.getPreferenceName().isBlank()
                 ? "custom" : "default";
-        
+
         UserTravelPreference preference = preferenceRepository.findByUserIdAndType(userId, preferenceType);
-        
+
         if (preference == null) {
             preference = UserTravelPreference.builder()
                     .userId(userId)
@@ -70,27 +55,23 @@ public class UserPreferenceApplicationService {
                     .preferenceName(request.getPreferenceName() != null ? request.getPreferenceName() : "默认偏好")
                     .build();
         }
-        
-        // 更新字段
+
+        // 更新所有字段（包括基础信息和偏好）
         updatePreferenceFields(preference, request);
-        
+
         preference = preferenceRepository.save(preference);
         log.info("保存用户偏好成功: userId={}, type={}", userId, preferenceType);
-        
+
         return toResponse(preference);
     }
-    
-    /**
-     * 删除用户偏好
-     */
+
+    /** 删除用户偏好 */
     public void deletePreference(Long preferenceId) {
         preferenceRepository.deleteById(preferenceId);
         log.info("删除用户偏好: id={}", preferenceId);
     }
-    
-    /**
-     * 获取用户偏好的摘要文本（供 Agent 使用）
-     */
+
+    /** 获取用户偏好的摘要文本（供 Agent 使用） */
     public String getPreferenceSummary(String userId) {
         UserTravelPreference preference = preferenceRepository.findDefaultPreference(userId);
         if (preference == null) {
@@ -98,8 +79,14 @@ public class UserPreferenceApplicationService {
         }
         return preference.toPreferenceSummary();
     }
-    
+
     private void updatePreferenceFields(UserTravelPreference preference, UserPreferenceRequest request) {
+        // 基础信息
+        if (request.getName() != null) {
+            preference.setName(request.getName());
+        }
+
+        // 行程偏好
         preference.setFavoriteDestinations(request.getFavoriteDestinations());
         preference.setPreferredSeason(request.getPreferredSeason());
         preference.setBudgetLevel(request.getBudgetLevel());
@@ -120,7 +107,7 @@ public class UserPreferenceApplicationService {
         preference.setMobilityRequirements(request.getMobilityRequirements());
         preference.setSpecialRequests(request.getSpecialRequests());
     }
-    
+
     private UserPreferenceResponse toResponse(UserTravelPreference preference) {
         return UserPreferenceResponse.builder()
                 .id(preference.getId())
@@ -153,7 +140,7 @@ public class UserPreferenceApplicationService {
                 .updatedAt(preference.getUpdatedAt())
                 .build();
     }
-    
+
     private String getBudgetLevelText(String level) {
         if (level == null) return null;
         return switch (level) {
@@ -163,7 +150,7 @@ public class UserPreferenceApplicationService {
             default -> level;
         };
     }
-    
+
     private String getTravelCompanionText(String companion) {
         if (companion == null) return null;
         return switch (companion) {
@@ -175,7 +162,7 @@ public class UserPreferenceApplicationService {
             default -> companion;
         };
     }
-    
+
     private String getActivityLevelText(String level) {
         if (level == null) return null;
         return switch (level) {

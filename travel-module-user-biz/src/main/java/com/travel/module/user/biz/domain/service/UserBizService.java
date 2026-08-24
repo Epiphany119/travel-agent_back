@@ -143,7 +143,6 @@ public class UserBizService {
             existing = new UserPreferencePO();
             existing.setUserId(userId);
             existing.setPreferenceType("default");
-            existing.setName("旅人");
             userPreferenceMapper.insert(existing);
         }
         return existing;
@@ -204,6 +203,31 @@ public class UserBizService {
 
     public JourneyPO getJourney(Long id) {
         return journeyMapper.selectById(id);
+    }
+
+    /**
+     * 获取用户所有的旅程进度（含途经地点与图片），供前端详情展示
+     */
+    public List<JourneyDetailVO> listJourneyDetails(String userId) {
+        List<JourneyPO> journeys = listJourneys(userId);
+        return journeys.stream().map(j -> buildDetail(j.getId())).collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
+     * 获取单个旅程完整详情（含途经地点与图片）
+     */
+    public JourneyDetailVO getJourneyDetail(Long id) {
+        JourneyPO j = journeyMapper.selectById(id);
+        if (j == null) return null;
+        return buildDetail(id);
+    }
+
+    private JourneyDetailVO buildDetail(Long id) {
+        return JourneyDetailVO.builder()
+                .journey(journeyMapper.selectById(id))
+                .points(listJourneyPoints(id))
+                .images(listJourneyImages(id))
+                .build();
     }
 
     @Transactional

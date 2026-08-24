@@ -1,11 +1,13 @@
 package com.travel.module.user.biz.infra.persistence;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 import com.baomidou.mybatisplus.annotation.*;
 import java.time.LocalDateTime;
 
 @Data
 @TableName("user_travel_preference")
+@JsonIgnoreProperties(ignoreUnknown = true) // 忽略前端传入的额外字段（如 username、name 等认证字段）
 public class UserPreferencePO {
     @TableId(type = IdType.AUTO)
     private Long id;
