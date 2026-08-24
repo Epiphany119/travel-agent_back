@@ -1,10 +1,32 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listInspirations, addInspiration, updateInspiration, deleteInspiration, uploadImage, type Inspiration } from '@/api/user'
 
 const router = useRouter()
+
+function openView(item: Inspiration) {
+  // 跳转到 PublishNoteView 查看模式，预填灵感数据
+  const content = [
+    item.quote ? `“${item.quote}”` : '',
+    item.description ? `\n\n${item.description}` : '',
+    item.estimatedBudget ? `\n\n预算：¥${item.estimatedBudget.toLocaleString()}` : '',
+    item.bestSeason ? `\n最佳季节：${item.bestSeason}` : '',
+  ].filter(Boolean).join('')
+  router.push({
+    path: '/publish',
+    query: {
+      title: item.name,
+      content: content || `想去 ${item.name} 看看，${item.quote || item.description || '把这里加入下一段旅行的计划。'}`,
+      image: item.imageUrl || '',
+      tags: item.tags || '',
+      city: '',
+    }
+  })
+}
+
 const loading = ref(false)
 const list = ref<Inspiration[]>([])
 
@@ -124,8 +146,8 @@ onMounted(load)
     </section>
 
     <section class="grid" v-loading="loading">
-      <article v-for="(item, i) in list" :key="item.id" class="card">
-        <div class="thumb" :style="thumbStyle(item, i)">
+      <article v-for="(item, i) in list" :key="item.id" class="card clickable" @click="openView(item)">
+        <div class="thumb" :style="thumbStyle(item, i)" @click.stop>
           <span class="status" :class="item.status === 0 ? 'pending' : 'done'">
             <i class="dot"></i>{{ statusText(item.status) }}
           </span>
@@ -145,8 +167,9 @@ onMounted(load)
             <span v-for="t in item.tags.split(',')" :key="t" class="chip">{{ t }}</span>
           </div>
           <div class="actions">
-            <button class="ghost" @click="openEdit(item)">编辑</button>
-            <button class="ghost danger" @click="remove(item)">删除</button>
+            <button class="ghost" @click.stop="openView(item)">查看详情</button>
+            <button class="ghost" @click.stop="openEdit(item)">编辑</button>
+            <button class="ghost danger" @click.stop="remove(item)">删除</button>
           </div>
         </div>
       </article>
@@ -246,6 +269,7 @@ onMounted(load)
   display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 22px;
 }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; box-shadow: 0 1px 2px rgba(22,78,66,.04); transition: transform .25s, box-shadow .25s; }
+.card.clickable { cursor: pointer; }
 .card:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(22,78,66,.10); }
 .thumb { height: 150px; position: relative; background-size: cover; background-position: center; }
 .thumb::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,.18), transparent 45%); }

@@ -52,7 +52,17 @@ async function load() {
   loading.value = true
   try {
     const res = await listJourneys()
-    list.value = res.data || []
+    // 兼容扁平 JourneyPO[]（旧/脏数据）与包装 TrueDetail[]（新结构），剔除空项避免渲染崩溃注入
+    list.value = ((res.data as any[]) || [])
+      .filter((d: any) => d && !!(d.journey || d.destination || d.id))
+      .map((d: any) => {
+        // 若已是 { journey, points, images } 结构，直接补齐子数组
+        if (d.journey) {
+          return Object.assign({}, d, { points: d.points || [], images: d.images || [] })
+        }
+        // 扁平 PO → 包装成 JourneyDetail
+        return { journey: d, points: d.points || [], images: d.images || [] }
+      })
   } catch (e) {
     console.error(e)
     ElMessage.error('加载旅程失败')
@@ -193,6 +203,7 @@ async function saveDetail() {
 
 const dateRange = (d?: JourneyDetail) => {
   if (!d) return '—'
+  if (!d.journey) return '—'
   const { startDate, endDate } = d.journey
   return [startDate, endDate].filter(Boolean).join('  ~  ') || '—'
 }

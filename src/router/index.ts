@@ -11,6 +11,7 @@ const router = createRouter({
     { path: '/', name: 'Chat', component: () => import('@/views/ChatView.vue') },
     { path: '/profile', name: 'Profile', component: () => import('@/views/UserProfile.vue') },
     { path: '/inspirations', name: 'Inspirations', component: () => import('@/views/InspirationView.vue') },
+    { path: '/notes', name: 'Notes', component: () => import('@/views/NotesView.vue') },
     { path: '/journeys', name: 'Journeys', component: () => import('@/views/JourneyView.vue') },
     { path: '/journey-map', name: 'JourneyMap', component: () => import('@/views/JourneyMapView.vue') },
     { path: '/agent-panel', name: 'AgentPanel', component: () => import('@/views/AgentPanel.vue') }
