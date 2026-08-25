@@ -4,11 +4,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Builder;
 import lombok.Data;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
- * 笔记文档响应体（含内容块）。
+ * 笔记文档响应体。
  */
 @Data
 @Builder
@@ -22,7 +20,10 @@ public class NoteDocumentResponse {
     private String visibility;
     private String shareToken;
     private String status;
+    /** 主题设置 JSON */
+    private String themeJson;
+    /** 完整 Markdown 内容 */
+    private String content;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-    private List<NoteBlockResponse> blocks;
 }

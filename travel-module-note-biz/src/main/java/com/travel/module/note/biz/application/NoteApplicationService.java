@@ -3,9 +3,7 @@ package com.travel.module.note.biz.application;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.travel.common.core.exception.BusinessException;
 import com.travel.module.note.biz.api.dto.*;
-import com.travel.module.note.biz.infra.persistence.NoteBlockMapper;
 import com.travel.module.note.biz.infra.persistence.NoteDocumentMapper;
-import com.travel.module.note.biz.infra.persistence.NoteBlockPO;
 import com.travel.module.note.biz.infra.persistence.NoteDocumentPO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,13 +11,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 笔记应用服务：负责文档与内容块的 CRUD，以及分享、复制等业务编排。
+ * 笔记应用服务：负责文档 CRUD，内容以 Markdown 文本直接存储。
  */
 @Slf4j
 @Service
@@ -27,24 +24,23 @@ import java.util.stream.Collectors;
 public class NoteApplicationService {
 
     private final NoteDocumentMapper documentMapper;
-    private final NoteBlockMapper blockMapper;
 
     // ---------------- 查询 ----------------
 
     /**
-     * 查询用户的笔记文档列表（不含内容块）。
+     * 查询用户的笔记文档列表。
      */
     public List<NoteDocumentResponse> listDocs(String userId) {
         LambdaQueryWrapper<NoteDocumentPO> q = new LambdaQueryWrapper<>();
         q.eq(NoteDocumentPO::getUserId, userId)
          .orderByDesc(NoteDocumentPO::getUpdatedAt);
         return documentMapper.selectList(q).stream()
-                .map(this::toListResponse)
+                .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
     /**
-     * 查询单篇笔记完整内容（含内容块）。
+     * 查询单篇笔记完整内容。
      */
     public NoteDocumentResponse getDoc(Long id, String userId) {
         NoteDocumentPO doc = documentMapper.selectById(id);
@@ -54,12 +50,11 @@ public class NoteApplicationService {
         if (userId != null && !userId.isBlank() && !doc.getUserId().equals(userId)) {
             throw new BusinessException(404, "笔记不存在");
         }
-        List<NoteBlockResponse> blocks = findBlocks(id);
-        return toDetailResponse(doc, blocks);
+        return toResponse(doc);
     }
 
     /**
-     * 通过分享 token 查看笔记（无需登录权限校验，仅供分享浏览）。
+     * 通过分享 token 查看笔记。
      */
     public NoteDocumentResponse getDocByShareToken(String token) {
         LambdaQueryWrapper<NoteDocumentPO> q = new LambdaQueryWrapper<>();
@@ -68,7 +63,7 @@ public class NoteApplicationService {
         if (doc == null) {
             throw new BusinessException(404, "分享的笔记不存在或已失效");
         }
-        return toDetailResponse(doc, findBlocks(doc.getId()));
+        return toResponse(doc);
     }
 
     // ---------------- 写入 ----------------
@@ -86,16 +81,17 @@ public class NoteApplicationService {
         doc.setVisibility("link".equals(request.getVisibility()) ? "link" : "private");
         doc.setStatus("draft");
         doc.setShareToken(UUID.randomUUID().toString().replace("-", ""));
+        doc.setThemeJson(request.getThemeJson());
+        doc.setContent(request.getContent());
         doc.setCreatedAt(LocalDateTime.now());
         doc.setUpdatedAt(doc.getCreatedAt());
         documentMapper.insert(doc);
 
-        saveBlocks(doc.getId(), request.getBlocks());
         return getDoc(doc.getId(), null);
     }
 
     /**
-     * 更新笔记文档属性与内容块（整段覆盖 blocks）。
+     * 更新笔记。
      */
     @Transactional
     public NoteDocumentResponse update(Long id, String userId, NoteDocumentRequest request) {
@@ -114,15 +110,20 @@ public class NoteApplicationService {
         if (request.getVisibility() != null) {
             doc.setVisibility("link".equals(request.getVisibility()) ? "link" : "private");
         }
+        if (request.getThemeJson() != null) {
+            doc.setThemeJson(request.getThemeJson());
+        }
+        if (request.getContent() != null) {
+            doc.setContent(request.getContent());
+        }
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
-        saveBlocks(id, request.getBlocks());
         return getDoc(id, null);
     }
 
     /**
-     * 删除笔记（连同内容块）。
+     * 删除笔记。
      */
     @Transactional
     public void delete(Long id, String userId) {
@@ -133,46 +134,12 @@ public class NoteApplicationService {
         if (!doc.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权删除该笔记");
         }
-        blockMapper.delete(new LambdaQueryWrapper<NoteBlockPO>().eq(NoteBlockPO::getDocumentId, id));
         documentMapper.deleteById(id);
     }
 
     // ---------------- 私有工具 ----------------
 
-    private List<NoteBlockResponse> findBlocks(Long documentId) {
-        LambdaQueryWrapper<NoteBlockPO> q = new LambdaQueryWrapper<>();
-        q.eq(NoteBlockPO::getDocumentId, documentId)
-         .orderByAsc(NoteBlockPO::getSortOrder);
-        return blockMapper.selectList(q).stream()
-                .map(b -> NoteBlockResponse.builder()
-                        .id(b.getId())
-                        .type(b.getType())
-                        .text(b.getText())
-                        .sortOrder(b.getSortOrder())
-                        .attrsJson(b.getAttrsJson())
-                        .build())
-                .collect(Collectors.toList());
-    }
-
-    /** 整段覆盖内容块：先删后插，并按传入顺序重排 sortOrder。 */
-    private void saveBlocks(Long documentId, List<NoteBlockRequest> blocks) {
-        blockMapper.delete(new LambdaQueryWrapper<NoteBlockPO>().eq(NoteBlockPO::getDocumentId, documentId));
-        if (blocks == null || blocks.isEmpty()) {
-            return;
-        }
-        int order = 0;
-        for (NoteBlockRequest req : blocks) {
-            NoteBlockPO po = new NoteBlockPO();
-            po.setDocumentId(documentId);
-            po.setType(req.getType() == null ? "p" : req.getType());
-            po.setText(req.getText() == null ? "" : req.getText());
-            po.setSortOrder(order++);
-            po.setAttrsJson(req.getAttrsJson());
-            blockMapper.insert(po);
-        }
-    }
-
-    private NoteDocumentResponse toListResponse(NoteDocumentPO doc) {
+    private NoteDocumentResponse toResponse(NoteDocumentPO doc) {
         return NoteDocumentResponse.builder()
                 .id(doc.getId())
                 .userId(doc.getUserId())
@@ -182,15 +149,11 @@ public class NoteApplicationService {
                 .visibility(doc.getVisibility())
                 .shareToken(doc.getShareToken())
                 .status(doc.getStatus())
+                .themeJson(doc.getThemeJson())
+                .content(doc.getContent())
                 .createdAt(doc.getCreatedAt())
                 .updatedAt(doc.getUpdatedAt())
                 .build();
-    }
-
-    private NoteDocumentResponse toDetailResponse(NoteDocumentPO doc, List<NoteBlockResponse> blocks) {
-        NoteDocumentResponse resp = toListResponse(doc);
-        resp.setBlocks(blocks);
-        return resp;
     }
 
     private String blankDefault(String v, String d) {

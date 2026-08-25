@@ -2,8 +2,6 @@ package com.travel.module.note.biz.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * 创建/更新笔记文档请求体。
@@ -19,6 +17,8 @@ public class NoteDocumentRequest {
     private String coverUrl;
     /** 可见性: private / link，默认 private */
     private String visibility = "private";
-    /** 内容块列表，按顺序保存 */
-    private List<NoteBlockRequest> blocks = new ArrayList<>();
+    /** 主题设置 JSON（背景色、文字色、强调色等） */
+    private String themeJson;
+    /** 完整 Markdown 内容 */
+    private String content;
 }

@@ -7,7 +7,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 笔记文档实体。一张笔记对应一个文档，内容以结构化块（block）形式存于 note_block 表。
+ * 笔记文档实体。一张笔记对应一个文档，内容以 Markdown 文本形式直接存储。
  */
 @Data
 @TableName("note_document")
@@ -29,6 +29,10 @@ public class NoteDocumentPO {
     private String shareToken;
     /** 状态: draft / published */
     private String status;
+    /** 主题设置 JSON（背景色、文字色、强调色等） */
+    private String themeJson;
+    /** 完整 Markdown 内容 */
+    private String content;
     /** 创建时间 */
     private LocalDateTime createdAt;
     /** 更新时间 */
