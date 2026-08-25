@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -104,8 +104,23 @@ async function initMap() {
   }
 }
 
-onMounted(initMap)
+let resizeObserver: ResizeObserver | null = null
+
+onMounted(async () => {
+  // 等父容器布局完成再初始化，Leaflet 需要真实尺寸
+  await nextTick()
+  initMap()
+  // 容器尺寸变化（如右侧面板宽度调整）时通知 Leaflet 重算
+  if (typeof ResizeObserver !== 'undefined' && mapEl.value) {
+    resizeObserver = new ResizeObserver(() => {
+      map?.invalidateSize()
+    })
+    resizeObserver.observe(mapEl.value)
+  }
+})
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
   markers.forEach((m) => m.remove())
   if (map) { map.remove(); map = null }
 })
@@ -142,8 +157,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped lang="scss">
-/* 填满内容区剩余高度（侧边栏布局下） */
-.map-shell { position: relative; flex: 1; min-height: 460px; overflow: hidden; }
+/* 填满父容器 100% 高度 */
+.map-shell { position: relative; width: 100%; height: 100%; overflow: hidden; }
 .map { position: absolute; inset: 0; z-index: 0; }
 
 /* 左上标题 */

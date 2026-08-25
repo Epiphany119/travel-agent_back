@@ -13,7 +13,8 @@ const md = new MarkdownIt({
   html: true,
   linkify: true,
   breaks: true,
-  typographer: true
+  typographer: true,
+  table: true
 })
 
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
@@ -27,7 +28,12 @@ function renderMarkdown(source: string): string {
   if (!source) return ''
   try {
     const raw = md.render(source)
-    return DOMPurify.sanitize(raw, {
+    // 为代码块提取语言，标注到 <pre> 上（用于显示语言角标 + 代码框）
+    let html = raw.replace(
+      /<pre><code[^>]*class="language-([\w+-]+)"[^>]*>/g,
+      (m: string, lang: string) => `<pre data-lang="${lang}"><code class="language-${lang}">`
+    )
+    return DOMPurify.sanitize(html, {
       ADD_TAGS: ['img', 'hr', 'input', 'figure', 'figcaption'],
       ADD_ATTR: ['contenteditable', 'draggable', 'data-note-id', 'data-link']
     })
@@ -46,6 +52,8 @@ const curDoc = reactive<NoteDocument>({ title: '', content: '', updatedAt: '' })
 
 const editorContent = ref('')
 const editorRef = ref<HTMLTextAreaElement | null>(null)
+const liveEditorRef = ref<HTMLElement | null>(null)
+const themePopoverVisible = ref(false)
 const showPreview = ref(true)
 const isEditorMode = ref(false)
 
@@ -57,6 +65,8 @@ const selectionThemeVisible = ref(true)
 const outlineVisible = ref(true)
 const infoVisible = ref(false)
 const shortcutsVisible = ref(true)
+const outlinePanelHeight = ref(360)
+let outlineResizeCleanup: (() => void) | null = null
 
 const currentUserId = computed(() => getNoteUserId())
 
@@ -74,6 +84,11 @@ const themePresets = [
   { name: '森林', bg: '#f0f7f1', fg: '#2d3e35', accent: '#4a9b6e' },
   { name: '樱花', bg: '#fff5f7', fg: '#3d2937', accent: '#e8758e' },
   { name: '石墨', bg: '#2c2c2c', fg: '#e8e8e8', accent: '#888888' },
+]
+const themeRows: { key: 'bg' | 'fg' | 'accent'; label: string }[] = [
+  { key: 'bg', label: '背景色' },
+  { key: 'fg', label: '文字色' },
+  { key: 'accent', label: '强调色' }
 ]
 
 function applyTheme() {
@@ -127,6 +142,42 @@ function formatTime(dateStr?: string): string {
 const displayTime = computed(() => formatTime(curDoc.updatedAt))
 const renderedPreview = computed(() => renderMarkdown(editorContent.value))
 
+function syncLiveEditor() {
+  const el = liveEditorRef.value
+  if (!el) return
+  editorContent.value = htmlToMarkdown(el)
+}
+
+function htmlToMarkdown(root: HTMLElement): string {
+  const walk = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent || ""
+    if (!(node instanceof HTMLElement)) return Array.from(node.childNodes).map(walk).join("")
+    const inner = Array.from(node.childNodes).map(walk).join("")
+    const tag = node.tagName.toLowerCase()
+    if (/^h[1-6]$/.test(tag)) return "#".repeat(Number(tag[1])) + " " + inner.trim() + "\n\n"
+    if (tag === "p") return inner.trim() + "\n\n"
+    if (tag === "br") return "\n"
+    if (tag === "strong" || tag === "b") return "**" + inner + "**"
+    if (tag === "em" || tag === "i") return "*" + inner + "*"
+    if (tag === "code" && node.parentElement?.tagName.toLowerCase() !== "pre") return "`" + inner + "`"
+    if (tag === "pre") return "\n\n```\n" + node.innerText.trim() + "\n```\n\n"
+    if (tag === "img") return "![" + (node.getAttribute("alt") || "") + "](" + (node.getAttribute("src") || "") + ")"
+    if (tag === "table") {
+      const rows = Array.from(node.querySelectorAll("tr")).map(row => Array.from(row.children).map(cell => String(cell.textContent || "").trim()))
+      if (!rows.length) return ""
+      const head = "| " + rows[0].join(" | ") + " |"
+      const divider = "| " + rows[0].map(() => "---").join(" | ") + " |"
+      const body = rows.slice(1).map(row => "| " + row.join(" | ") + " |").join("\n")
+      return head + "\n" + divider + (body ? "\n" + body : "") + "\n\n"
+    }
+    if (tag === "li") return "- " + inner.trim() + "\n"
+    if (tag === "ul" || tag === "ol") return inner + "\n"
+    if (tag === "blockquote") return inner.split("\n").filter(Boolean).map(line => "> " + line).join("\n") + "\n\n"
+    return inner
+  }
+  return walk(root).replace(/\n{3,}/g, "\n\n").trim()
+}
+
 // ─── 列表加载 ────────────────────────────────────────────
 async function load() {
   loading.value = true
@@ -170,6 +221,7 @@ async function openDoc(id: number) {
 
 // ─── 保存笔记 ────────────────────────────────────────────
 async function saveDoc() {
+  syncLiveEditor()
   if (currentId.value == null) { await addDoc(); return }
   saving.value = true
   try {
@@ -263,14 +315,28 @@ async function importMarkdown(event: Event) {
       // 更新现有文档
       editorContent.value = text
       curDoc.title = title
-      await saveDoc()
+      const updated = await updateNote(currentId.value, {
+        title,
+        content: text,
+        destination: curDoc.destination || '',
+        coverUrl: curDoc.coverUrl || '',
+        visibility: curDoc.visibility || 'private',
+        themeJson: themeToJson()
+      } as NoteDocument)
+      curDoc.updatedAt = updated.updatedAt || new Date().toISOString()
+      curDoc.content = text
     } else {
-      // 创建新文档（带内容）
-      await addDoc(text)
-      // addDoc 会打开新文档，内容已传入
-      curDoc.title = title
-      await saveDoc()
+      // 直接创建完整文档，避免先创建空文档再更新导致导入状态不一致
+      const created = await createNote({
+        title,
+        content: text,
+        visibility: 'private',
+        themeJson: themeToJson()
+      })
+      docs.value.unshift(created)
+      await openDoc(created.id!)
     }
+    await load()
     ElMessage.success('Markdown 已导入')
   } catch (e: any) {
     ElMessage.error(e?.message || '导入失败')
@@ -279,20 +345,41 @@ async function importMarkdown(event: Event) {
 }
 
 // ─── 拖拽调整面板宽度（修复版） ────────────────────────────
-const leftPanelWidth = ref(220)
-const rightPanelWidth = ref(320)
-const showRightPanel = ref(true)
-const showLeftPanel = ref(true)
+const LEFT_MIN = 176
+const LEFT_MAX = 420
+const RIGHT_MIN = 264
+const RIGHT_MAX = 640
+const CENTER_MIN = 360
+const leftPanelWidth = ref(Number(localStorage.getItem('roamly-notes-left-width')) || 220)
+const rightPanelWidth = ref(Number(localStorage.getItem('roamly-notes-right-width')) || 320)
+const showRightPanel = ref(localStorage.getItem('roamly-notes-right-visible') !== '0')
+const showLeftPanel = ref(localStorage.getItem('roamly-notes-left-visible') !== '0')
+
+function notesBounds() {
+  const el = document.querySelector('.notes-app') as HTMLElement | null
+  return el?.getBoundingClientRect() || { left: 0, right: window.innerWidth, width: window.innerWidth }
+}
+
+function clampPanelWidth(width: number, side: 'left' | 'right') {
+  const bounds = notesBounds()
+  const available = Math.max(0, bounds.width - CENTER_MIN - 12)
+  if (side === 'left') return Math.round(Math.min(LEFT_MAX, Math.max(LEFT_MIN, Math.min(width, available - (showRightPanel.value ? rightPanelWidth.value : 0)))))
+  return Math.round(Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, available - (showLeftPanel.value ? leftPanelWidth.value : 0)))))
+}
+
+watch(leftPanelWidth, value => localStorage.setItem('roamly-notes-left-width', String(value)))
+watch(rightPanelWidth, value => localStorage.setItem('roamly-notes-right-width', String(value)))
+watch(showLeftPanel, value => localStorage.setItem('roamly-notes-left-visible', value ? '1' : '0'))
+watch(showRightPanel, value => localStorage.setItem('roamly-notes-right-visible', value ? '1' : '0'))
 
 function onLeftHandleMouseDown(e: MouseEvent) {
   e.preventDefault()
   e.stopPropagation()
-  // 按下时立即对齐鼠标位置，避免“拖一段才动”
-  leftPanelWidth.value = Math.min(400, Math.max(160, e.clientX))
+  const bounds = notesBounds()
+  leftPanelWidth.value = clampPanelWidth(e.clientX - bounds.left, 'left')
 
   const handleMove = (ev: MouseEvent) => {
-    const newWidth = Math.min(400, Math.max(160, ev.clientX))
-    leftPanelWidth.value = newWidth
+    leftPanelWidth.value = clampPanelWidth(ev.clientX - bounds.left, 'left')
   }
 
   const handleUp = () => {
@@ -311,13 +398,11 @@ function onLeftHandleMouseDown(e: MouseEvent) {
 function onRightHandleMouseDown(e: MouseEvent) {
   e.preventDefault()
   e.stopPropagation()
-  const windowWidth = window.innerWidth
-  rightPanelWidth.value = Math.min(600, Math.max(240, windowWidth - e.clientX))
+  const bounds = notesBounds()
+  rightPanelWidth.value = clampPanelWidth(bounds.right - e.clientX, 'right')
 
   const handleMove = (ev: MouseEvent) => {
-    const winW = window.innerWidth
-    const newWidth = Math.min(600, Math.max(240, winW - ev.clientX))
-    rightPanelWidth.value = newWidth
+    rightPanelWidth.value = clampPanelWidth(bounds.right - ev.clientX, 'right')
   }
 
   const handleUp = () => {
@@ -372,24 +457,39 @@ const outline = computed(() => {
 })
 
 function scrollToHeading(line: number) {
-  const ta = editorRef.value
-  if (ta) {
-    const lines = editorContent.value.split('\n')
-    let pos = 0
-    for (let i = 0; i < line; i++) {
-      pos += lines[i].length + 1
-    }
-    ta.focus()
-    ta.setSelectionRange(pos, pos + (lines[line]?.length || 0))
-    const lineHeight = 24
-    ta.scrollTop = line * lineHeight
+  const item = outline.value.find(entry => entry.line === line)
+  const container = liveEditorRef.value
+  if (!container || !item) return
+  const headings = container.querySelectorAll('h1, h2, h3')
+  const heading = Array.from(headings).find(node => node.textContent?.trim() === item.text.trim()) as HTMLElement | undefined
+  if (heading) {
+    const cRect = container.getBoundingClientRect()
+    const hRect = heading.getBoundingClientRect()
+    // 精准定位：标题行刚好对齐容器顶部（不差行、不偏移）
+    const delta = hRect.top - cRect.top
+    container.scrollTo({ top: container.scrollTop + delta, behavior: 'smooth' })
   }
+}
+
+function startOutlineResize(e: PointerEvent) {
+  e.preventDefault()
+  const startY = e.clientY
+  const startHeight = outlinePanelHeight.value
+  const move = (ev: PointerEvent) => {
+    outlinePanelHeight.value = Math.max(180, Math.min(window.innerHeight * .78, startHeight + ev.clientY - startY))
+  }
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); outlineResizeCleanup = null; document.body.style.cursor = '' }
+  document.body.style.cursor = 'row-resize'
+  document.addEventListener('pointermove', move)
+  document.addEventListener('pointerup', up)
+  outlineResizeCleanup = up
 }
 </script>
 
 <template>
   <div class="notes-app" :style="{ background: theme.bg, color: theme.fg }">
     <!-- ===== 左侧笔记列表面板（与右侧面板一致） ===== -->
+    <Transition name="sidebar-slide-left">
     <aside 
       v-if="showLeftPanel"
       class="left-panel" 
@@ -402,7 +502,7 @@ function scrollToHeading(line: number) {
           class="panel-collapse-btn"
           title="收起左侧面板"
           @click="showLeftPanel = false"
-        >◂</button>
+        ><span class="panel-chevron" aria-hidden="true">‹</span></button>
       </div>
 
       <div class="panel-toolbar">
@@ -449,10 +549,11 @@ function scrollToHeading(line: number) {
         </p>
       </div>
 
-      <div class="panel-footer">
-        <span>{{ currentUserId }}</span>
-      </div>
+<!--      <div class="panel-footer">-->
+<!--        <span>{{ currentUserId }}</span>-->
+<!--      </div>-->
     </aside>
+    </Transition>
 
     <!-- ===== 左侧拖拽手柄 ===== -->
     <div 
@@ -467,7 +568,7 @@ function scrollToHeading(line: number) {
       class="left-restore-btn"
       title="展开笔记列表"
       @click="showLeftPanel = true"
-    >▸</button>
+    ><span class="panel-chevron" aria-hidden="true">›</span></button>
 
     <!-- ===== 中间编辑区 ===== -->
     <main class="center-panel">
@@ -486,30 +587,22 @@ function scrollToHeading(line: number) {
           />
           
           <div class="tool-group">
-            <button 
-              class="tool-btn" 
-              :class="{ active: isEditorMode }"
-              @click="isEditorMode = true" 
-              title="编辑模式"
-            >✏️ 编辑</button>
-            <button 
-              class="tool-btn" 
-              :class="{ active: showPreview && !isEditorMode }"
-              @click="isEditorMode = false; showPreview = true" 
-              title="预览模式"
-            >👁 预览</button>
-            <button 
-              class="tool-btn" 
-              :class="{ active: showPreview && isEditorMode }"
-              @click="showPreview = !showPreview" 
-              title="切换预览 (Ctrl+E)"
-            >
-              {{ showPreview ? '📝+👁' : '📝' }}
-            </button>
           </div>
           
           <div class="tool-group">
-            <button class="tool-btn" @click="selectionThemeVisible = !selectionThemeVisible" title="主题">🎨</button>
+            <div class="theme-popover-wrap">
+              <button class="tool-btn" :class="{ active: showRightPanel && selectionThemeVisible }" @click="showRightPanel = true; selectionThemeVisible = true" title="打开主题设置">🎨</button>
+              <div v-if="themePopoverVisible" class="theme-popover">
+                <div class="popover-title">主题颜色</div>
+                <label v-for="row in themeRows" :key="row.key" class="popover-color-row">
+                  <span>{{ row.label }}</span>
+                  <input type="color" v-model="theme[row.key]" />
+                  <input class="hex-input" v-model="theme[row.key]" maxlength="7" spellcheck="false" />
+                </label>
+                <div class="theme-presets compact-presets"><button v-for="p in themePresets" :key="p.name" class="preset-btn" :style="{ background: p.bg, color: p.fg, borderColor: p.accent }" @click="Object.assign(theme, p)">{{ p.name }}</button></div>
+                <button class="theme-save-btn" :style="{ background: theme.accent }" @click="saveDoc(); themePopoverVisible = false">保存主题</button>
+              </div>
+            </div>
             <span class="save-indicator" :class="{ saving }">
               {{ saving ? '保存中…' : '已保存' }}
             </span>
@@ -527,44 +620,11 @@ function scrollToHeading(line: number) {
 
       <div class="editor-body" v-if="curDoc.id">
         <div class="editor-area">
-          <!-- 编辑文本区 -->
-          <div class="editor-main" :class="{ 'half': showPreview && isEditorMode }">
-            <textarea
-              v-if="isEditorMode"
-              ref="editorRef"
-              v-model="editorContent"
-              class="md-textarea"
-              placeholder="在此输入 Markdown 内容...
-
-支持:
-# 标题 ## 子标题
-- 列表项
-- [x] 待办项
-**粗体** *斜体* `代码`
-[链接](url)
---- 分割线
-> 引用块"
-              spellcheck="false"
-            ></textarea>
+          <div class="editor-main">
             
-            <!-- 预览模式 -->
-            <div 
-              v-else 
-              class="preview-content markdown-body"
-              v-html="renderedPreview"
-              @click="handlePreviewClick"
-            ></div>
+            <div ref="liveEditorRef" class="preview-content markdown-body live-editor" contenteditable="true" spellcheck="false" v-html="renderedPreview" @blur="syncLiveEditor" @click="handlePreviewClick"></div>
           </div>
           
-          <!-- 分屏预览 -->
-          <div 
-            v-if="showPreview && isEditorMode"
-            class="editor-preview markdown-body"
-            @click="handlePreviewClick"
-          >
-            <div class="preview-label">预览</div>
-            <div class="preview-content scrollable" v-html="renderedPreview"></div>
-          </div>
         </div>
       </div>
       
@@ -579,6 +639,7 @@ function scrollToHeading(line: number) {
     ></div>
 
     <!-- ===== 右侧信息面板 ===== -->
+    <Transition name="sidebar-slide-right">
     <aside 
       v-if="showRightPanel"
       class="right-panel"
@@ -591,7 +652,7 @@ function scrollToHeading(line: number) {
           class="panel-collapse-btn"
           title="收起右侧面板 (Ctrl+B)"
           @click="showRightPanel = false"
-        >▸</button>
+        ><span class="panel-chevron" aria-hidden="true">›</span></button>
       </div>
 
       <!-- 主题设置 -->
@@ -604,17 +665,17 @@ function scrollToHeading(line: number) {
           <div class="theme-row">
             <label>背景色</label>
             <input type="color" v-model="theme.bg" />
-            <span class="hex">{{ theme.bg }}</span>
+            <input class="hex-input" v-model="theme.bg" maxlength="7" spellcheck="false" />
           </div>
           <div class="theme-row">
             <label>文字色</label>
             <input type="color" v-model="theme.fg" />
-            <span class="hex">{{ theme.fg }}</span>
+            <input class="hex-input" v-model="theme.fg" maxlength="7" spellcheck="false" />
           </div>
           <div class="theme-row">
             <label>强调色</label>
             <input type="color" v-model="theme.accent" />
-            <span class="hex">{{ theme.accent }}</span>
+            <input class="hex-input" v-model="theme.accent" maxlength="7" spellcheck="false" />
           </div>
           <div class="theme-presets">
             <button 
@@ -639,7 +700,7 @@ function scrollToHeading(line: number) {
           <span>📑 大纲目录</span>
           <span class="collapse-icon">{{ outlineVisible ? '▼' : '▶' }}</span>
         </div>
-        <div class="section-body outline" v-if="outlineVisible">
+        <div class="section-body outline" v-if="outlineVisible" :style="{ height: outlinePanelHeight + 'px' }">
           <div 
             v-for="(item, idx) in outline" 
             :key="idx"
@@ -649,6 +710,7 @@ function scrollToHeading(line: number) {
           >
             {{ item.text }}
           </div>
+          <div class="section-resize-handle" title="拖动调整大纲高度" @pointerdown="startOutlineResize"><span></span></div>
         </div>
       </div>
 
@@ -690,6 +752,7 @@ function scrollToHeading(line: number) {
         </div>
       </div>
     </aside>
+    </Transition>
 
     <!-- 右栏收起后的展开按钮 -->
     <button
@@ -697,7 +760,7 @@ function scrollToHeading(line: number) {
       class="right-restore-btn"
       title="展开右侧面板 (Ctrl+B)"
       @click="showRightPanel = true"
-    >◂</button>
+    ><span class="panel-chevron" aria-hidden="true">‹</span></button>
   </div>
 </template>
 
@@ -707,6 +770,7 @@ function scrollToHeading(line: number) {
   display: flex;
   height: 100vh;
   overflow: hidden;
+  min-width: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   background: var(--notes-bg, #ffffff);
   color: var(--notes-fg, #1f2329);
@@ -719,7 +783,17 @@ function scrollToHeading(line: number) {
   flex-direction: column;
   border-right: 1px solid #e5e6e8;
   overflow: hidden;
+  will-change: transform, opacity;
 }
+
+.sidebar-slide-left-enter-active,
+.sidebar-slide-left-leave-active,
+.sidebar-slide-right-enter-active,
+.sidebar-slide-right-leave-active { transition: transform .22s ease, opacity .18s ease; }
+.sidebar-slide-left-enter-from,
+.sidebar-slide-left-leave-to { transform: translateX(-18px); opacity: 0; }
+.sidebar-slide-right-enter-from,
+.sidebar-slide-right-leave-to { transform: translateX(18px); opacity: 0; }
 
 /* 收起/展开按钮 */
 .panel-collapse-btn {
@@ -802,14 +876,14 @@ function scrollToHeading(line: number) {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 34px;
-  height: 64px;
+  width: 28px;
+  height: 44px;
   border: 1px solid #e5e6e8;
   border-left: 0;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 6px 6px 0;
   background: var(--card, #fffdf8);
   color: #646a73;
-  font-size: 14px;
+  font-size: 24px;
   cursor: pointer;
   z-index: 50;
   box-shadow: 2px 0 10px rgba(0, 0, 0, 0.06);
@@ -847,14 +921,14 @@ function scrollToHeading(line: number) {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 34px;
-  height: 64px;
+  width: 28px;
+  height: 44px;
   border: 1px solid #e5e6e8;
   border-right: 0;
-  border-radius: 8px 0 0 8px;
+  border-radius: 6px 0 0 6px;
   background: var(--card, #fffdf8);
   color: #646a73;
-  font-size: 14px;
+  font-size: 24px;
   cursor: pointer;
   z-index: 50;
   box-shadow: -2px 0 10px rgba(0, 0, 0, 0.06);
@@ -866,6 +940,8 @@ function scrollToHeading(line: number) {
     border-color: #9bb8ff;
   }
 }
+
+.panel-chevron { display: block; line-height: 1; transform: translateY(-1px); }
 
 .panel-toolbar {
   padding: 12px 16px;
@@ -958,7 +1034,7 @@ function scrollToHeading(line: number) {
 
 /* ─── 拖拽手柄（修复版） ─────────────────────────────────── */
 .drag-handle {
-  width: 12px;
+  width: 4px;
   flex-shrink: 0;
   cursor: col-resize;
   background: transparent;
@@ -973,8 +1049,8 @@ function scrollToHeading(line: number) {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: -6px;
-    right: -6px;
+    left: -8px;
+    right: -8px;
   }
 
   &::after {
@@ -995,6 +1071,9 @@ function scrollToHeading(line: number) {
   &:active { background: rgba(51, 112, 255, 0.05); }
   &:active::after { background: #3370ff; }
 }
+
+.left-handle { margin-left: -1px; }
+.right-handle { margin-right: -1px; }
 
 /* ─── 中间编辑区 ─────────────────────────────────── */
 .center-panel {
@@ -1053,6 +1132,27 @@ function scrollToHeading(line: number) {
   align-items: center;
   gap: 4px;
 }
+
+.theme-popover-wrap { position: relative; }
+.theme-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 100;
+  width: 286px;
+  padding: 14px;
+  border: 1px solid #dfe2e6;
+  border-radius: 10px;
+  background: var(--card, #fffdf8);
+  box-shadow: 0 12px 30px rgba(0,0,0,.14);
+}
+.popover-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.popover-color-row { display: grid; grid-template-columns: 62px 32px 1fr; align-items: center; gap: 8px; margin: 8px 0; font-size: 12px; color: #646a73; }
+.popover-color-row input[type='color'] { width: 28px; height: 28px; border: 1px solid #d8dade; border-radius: 5px; padding: 2px; background: #fff; }
+.hex-input { min-width: 0; width: 100%; border: 1px solid #d8dade; border-radius: 5px; padding: 6px 7px; font: 12px ui-monospace, monospace; color: #1f2329; background: #fff; }
+.theme-row .hex-input { width: 96px; }
+.compact-presets { display: flex; flex-wrap: wrap; gap: 5px; margin: 12px 0; }
+.compact-presets .preset-btn { padding: 4px 7px; font-size: 11px; }
 
 .tool-btn {
   padding: 6px 10px;
@@ -1154,10 +1254,19 @@ function scrollToHeading(line: number) {
 
 .preview-content {
   flex: 1;
-  padding: 48px 72px 120px;
+  width: min(100%, 1080px);
+  margin: 0 auto;
+  padding: 52px 64px 140px;
   overflow-y: auto;
   line-height: 1.8;
 }
+
+.live-editor {
+  outline: none;
+  cursor: text;
+  min-height: 100%;
+}
+.live-editor:focus { box-shadow: inset 0 0 0 1px rgba(51,112,255,.12); }
 
 .preview-content.scrollable { overflow-y: auto; }
 
@@ -1200,11 +1309,31 @@ function scrollToHeading(line: number) {
 .collapse-icon { font-size: 10px; color: #8f959e; }
 
 .section-body {
+  position: relative;
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 42px;
+  max-height: 52vh;
+  overflow: auto;
+  resize: vertical;
 }
+.section-body.outline { min-height: 180px; resize: vertical; }
+.section-resize-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -7px;
+  height: 14px;
+  z-index: 5;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.section-resize-handle span { width: 42px; height: 3px; border-radius: 3px; background: transparent; transition: background .15s; }
+.section-resize-handle:hover span, .section-resize-handle:active span { background: var(--notes-accent, #3370ff); }
 
 /* 主题设置 */
 .theme-row {
@@ -1332,24 +1461,26 @@ function scrollToHeading(line: number) {
 }
 
 /* ─── Markdown 预览样式（Cursor/GitHub 宽松排版） ────── */
-.markdown-body {
+/* 必须用 :deep()：v-html 注入的内容不带 scoped 属性，普通选择器无法命中 */
+:deep(.markdown-body) {
   font-size: 16px;
-  line-height: 1.7;
+  line-height: 1.75;
+  letter-spacing: .01em;
   color: var(--notes-fg, #1f2329);
   word-break: break-word;
 
   h1, h2, h3, h4, h5, h6 {
     font-weight: 650;
     line-height: 1.35;
-    margin-top: 28px;
-    margin-bottom: 14px;
+    margin-top: 2.1em;
+    margin-bottom: .7em;
   }
 
   h1 {
     font-size: 2em;
     border-bottom: 1px solid #e5e6e8;
     padding-bottom: 10px;
-    margin-top: 0.5em;
+    margin-top: 0;
   }
 
   h2 {
@@ -1363,14 +1494,14 @@ function scrollToHeading(line: number) {
   h5 { font-size: 0.9em; }
   h6 { font-size: 0.85em; color: #646a73; }
 
-  p { margin: 16px 0; line-height: 1.75; }
+  p { margin: 1em 0; line-height: 1.8; }
 
   ul, ol {
     padding-left: 1.8em;
-    margin: 16px 0;
+    margin: 1em 0;
 
     li {
-      margin: 8px 0;
+      margin: .35em 0;
       line-height: 1.7;
     }
 
@@ -1398,20 +1529,47 @@ function scrollToHeading(line: number) {
   }
 
   pre {
-    padding: 18px 20px;
+    position: relative;
+    padding: 42px 20px 18px;
     border-radius: 10px;
-    background: #1e1e2e;
-    color: #d4d4d8;
+    background: #1e1f26;
+    border: 1px solid #3a3d45;
+    box-shadow: 0 6px 18px rgba(16, 18, 24, 0.28);
+    color: #d6d9e0;
     overflow-x: auto;
-    margin: 18px 0;
-    font-size: 14px;
-    line-height: 1.65;
+    margin: 20px 0;
+    font-size: 13.5px;
+    line-height: 1.7;
+    /* 顶部工具条（代码框头）：圆点 + 语言标签 */
+    background-image:
+      radial-gradient(circle at 16px 18px, #ff5f57 0 8px, transparent 9px),
+      radial-gradient(circle at 36px 18px, #febc2e 0 8px, transparent 9px),
+      radial-gradient(circle at 56px 18px, #28c840 0 8px, transparent 9px);
 
     code {
       padding: 0;
       background: transparent;
       color: inherit;
       font-size: inherit;
+      font-family: 'SF Mono', ui-monospace, 'Menlo', 'Consolas', monospace;
+    }
+
+    /* 语言角标 */
+    &::after {
+      content: attr(data-lang);
+      position: absolute;
+      top: 22px;
+      right: 16px;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #9aa0aa;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.1);
+      padding: 2px 9px;
+      border-radius: 4px;
+      font-family: 'SF Mono', ui-monospace, 'Menlo', monospace;
     }
   }
 
@@ -1447,15 +1605,30 @@ function scrollToHeading(line: number) {
   table {
     border-collapse: collapse;
     width: 100%;
-    margin: 18px 0;
+    margin: 20px 0;
+    border: 1px solid var(--notes-border, #cdd3dc);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--notes-tbl-bg, #ffffff);
+    box-shadow: 0 1px 3px rgba(20, 24, 30, 0.06);
 
     th, td {
-      border: 1px solid #e5e6e8;
-      padding: 10px 14px;
+      border: 1px solid var(--notes-border, #d9dde3);
+      padding: 11px 15px;
       text-align: left;
+      min-width: 110px;
+      line-height: 1.65;
     }
 
-    th { background: #f5f6f7; font-weight: 600; }
+    th {
+      background: var(--notes-tbl-head, #f3f5f8);
+      font-weight: 700;
+      color: var(--notes-fg, #1f2329);
+    }
+
+    /* 斑马纹 + hover 行高亮（Office Viewer 观感） */
+    tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.025); }
+    tbody tr:hover { background: rgba(51, 112, 255, 0.05); }
   }
 
   input[type="checkbox"] {
