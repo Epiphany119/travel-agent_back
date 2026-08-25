@@ -107,6 +107,7 @@ CREATE TABLE `user_travel_preference` (
   `notify_weather_alert` tinyint NOT NULL DEFAULT '1',
   `notify_price_change` tinyint NOT NULL DEFAULT '1',
   `preferred_language` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'zh-CN',
+  `system_theme_json` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '{"fg":"#1D2B27","bg":"#F7F3EA","accent":"#164E42"}' COMMENT '系统界面主题 JSON',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),

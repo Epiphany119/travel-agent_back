@@ -63,6 +63,8 @@ public class UserPreferencePO {
     private Boolean notifyWeatherAlert;
     private Boolean notifyPriceChange;
     private String preferredLanguage;
+    /** 系统界面主题颜色 JSON: {fg,bg,accent} */
+    private String systemThemeJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

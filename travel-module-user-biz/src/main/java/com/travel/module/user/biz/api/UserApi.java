@@ -457,6 +457,7 @@ public class UserApi {
             result.put("pacePreference", pref.getPacePreference());
             result.put("mobilityRequirements", pref.getMobilityRequirements());
             result.put("specialRequests", pref.getSpecialRequests());
+            result.put("systemThemeJson", pref.getSystemThemeJson());
         }
 
         // 合并 auth 信息（邮箱 + 用户名）
