@@ -15,7 +15,24 @@ const md = new MarkdownIt({
   breaks: true,
   typographer: true,
   table: true
-})
+  ,highlight: (code: string, lang: string) => highlightCode(code, lang)
+} as any)
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// Lightweight highlighting for the languages most commonly used in travel notes.
+// Markdown remains valid even when a language is unknown.
+function highlightCode(code: string, lang: string): string {
+  const source = escapeHtml(code)
+  if (!/^(java|javascript|typescript|js|ts|json|css|html|xml|sql|bash|sh|python|py)?$/i.test(lang || '')) return source
+  let highlighted = source
+    .replace(/(\/\/[^\n]*|#[^\n]*)/g, '<span class="code-comment">$1</span>')
+    .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="code-string">$1</span>')
+    .replace(/\b(abstract|boolean|break|case|catch|class|const|continue|def|else|extends|final|for|from|function|if|implements|import|in|interface|let|new|null|package|private|protected|public|return|static|this|throw|try|var|void|while|async|await|true|false)\b/g, '<span class="code-keyword">$1</span>')
+  return highlighted
+}
 
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx]
@@ -46,6 +63,7 @@ function renderMarkdown(source: string): string {
 const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
+const creating = ref(false)
 const currentId = ref<number | null>(null)
 const docs = ref<NoteDocument[]>([])
 const curDoc = reactive<NoteDocument>({ title: '', content: '', updatedAt: '' })
@@ -157,6 +175,10 @@ function htmlToMarkdown(root: HTMLElement): string {
     if (/^h[1-6]$/.test(tag)) return "#".repeat(Number(tag[1])) + " " + inner.trim() + "\n\n"
     if (tag === "p") return inner.trim() + "\n\n"
     if (tag === "br") return "\n"
+    // contenteditable browsers represent Enter-separated lines as div blocks.
+    // A single newline keeps normal lines tightly spaced in Markdown; adding
+    // a blank line would turn every line into a separate paragraph.
+    if (tag === "div") return "\n" + inner
     if (tag === "strong" || tag === "b") return "**" + inner + "**"
     if (tag === "em" || tag === "i") return "*" + inner + "*"
     if (tag === "code" && node.parentElement?.tagName.toLowerCase() !== "pre") return "`" + inner + "`"
@@ -246,6 +268,12 @@ async function saveDoc() {
 }
 
 async function addDoc(initialContent = '') {
+  // Initialize the editor state before the request completes so the toolbar
+  // and title input remain present while the new document is being created.
+  curDoc.title = '新笔记'
+  curDoc.content = initialContent
+  editorContent.value = initialContent
+  creating.value = true
   try {
     const d = await createNote({
       title: '新笔记',
@@ -256,6 +284,7 @@ async function addDoc(initialContent = '') {
     docs.value.unshift(d)
     await openDoc(d.id!)
   } catch (e: any) { ElMessage.error(e?.message || '创建失败') }
+  finally { creating.value = false }
 }
 
 async function removeDoc() {
@@ -572,7 +601,7 @@ function startOutlineResize(e: PointerEvent) {
 
     <!-- ===== 中间编辑区 ===== -->
     <main class="center-panel">
-      <header class="editor-toolbar" v-if="curDoc.id">
+      <header class="editor-toolbar" v-if="curDoc.id || creating">
         <div class="breadcrumb">
           <span>我的笔记</span>
           <i>/</i>
@@ -618,7 +647,7 @@ function startOutlineResize(e: PointerEvent) {
         </div>
       </header>
 
-      <div class="editor-body" v-if="curDoc.id">
+      <div class="editor-body" v-if="curDoc.id || creating">
         <div class="editor-area">
           <div class="editor-main">
             
@@ -1553,6 +1582,10 @@ function startOutlineResize(e: PointerEvent) {
       font-size: inherit;
       font-family: 'SF Mono', ui-monospace, 'Menlo', 'Consolas', monospace;
     }
+
+    .code-comment { color: #8b949e; font-style: italic; }
+    .code-string { color: #a5d6ff; }
+    .code-keyword { color: #ff7b72; }
 
     /* 语言角标 */
     &::after {
