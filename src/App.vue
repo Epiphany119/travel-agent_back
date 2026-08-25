@@ -11,14 +11,32 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import GlobalRightPanel from '@/components/GlobalRightPanel.vue'
+import { getPreferences } from '@/api/user'
 
 const route = useRoute()
 const isAuthPage = computed(() => route.path === '/auth' || route.path.startsWith('/auth/'))
+const systemDefaults = { fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42' }
+
+async function applySystemPalette() {
+  const root = document.documentElement
+  let palette = systemDefaults
+  try {
+    const result = await getPreferences()
+    const p = result.data || {}
+    const saved = p.systemThemeJson ? JSON.parse(p.systemThemeJson) : {}
+    palette = { fg: saved.fg || systemDefaults.fg, bg: saved.bg || systemDefaults.bg, accent: saved.accent || systemDefaults.accent }
+  } catch { /* keep defaults when the profile cannot be loaded */ }
+  root.style.setProperty('--ink', palette.fg)
+  root.style.setProperty('--paper', palette.bg)
+  root.style.setProperty('--forest', palette.accent)
+}
+
+watch(() => route.path, () => { void applySystemPalette() }, { immediate: true })
 </script>
 
 <style>

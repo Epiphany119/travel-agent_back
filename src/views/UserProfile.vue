@@ -10,6 +10,57 @@ const router = useRouter()
 const userStore = useUserStore()
 const saving = ref(false)
 const loaded = ref(false)
+const paletteOpen = ref(false)
+const systemPalette = reactive({
+  fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42'
+})
+const palettePresets = [
+  { name: 'Roamly', fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42' },
+  { name: '海岸', fg: '#17324D', bg: '#EEF7FA', accent: '#147D92' },
+  { name: '日落', fg: '#43251C', bg: '#FFF5ED', accent: '#C85A36' },
+  { name: '墨绿', fg: '#E8F1EC', bg: '#10241E', accent: '#4FBE91' }
+]
+
+function applySystemPalette() {
+  const root = document.documentElement
+  root.style.setProperty('--ink', systemPalette.fg)
+  root.style.setProperty('--paper', systemPalette.bg)
+  root.style.setProperty('--forest', systemPalette.accent)
+}
+
+async function saveSystemPalette() {
+  saving.value = true
+  try {
+    await savePreferences({
+      ...form,
+      systemThemeJson: JSON.stringify(systemPalette),
+      userId: localStorage.getItem('roamly_user_id') || 'user_001'
+    })
+    form.systemThemeJson = JSON.stringify(systemPalette)
+    applySystemPalette()
+    paletteOpen.value = false
+    ElMessage.success('系统主题已保存')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error('系统主题保存失败')
+  } finally { saving.value = false }
+}
+
+function closePalette() {
+  // Discard unsaved edits and restore the last database-backed palette.
+  loadSystemPalette()
+  paletteOpen.value = false
+}
+
+function loadSystemPalette() {
+  try {
+    const saved = form.systemThemeJson ? JSON.parse(form.systemThemeJson) : {}
+    Object.assign(systemPalette, {
+      fg: saved.fg || systemPalette.fg, bg: saved.bg || systemPalette.bg, accent: saved.accent || systemPalette.accent
+    })
+  } catch {}
+  applySystemPalette()
+}
 
 // 头像
 const avatar = ref<string>('')
@@ -80,6 +131,7 @@ async function load() {
     const prefRes = await getPreferences()
     const p = prefRes.data || {}
     Object.assign(form, p)
+    loadSystemPalette()
     // 关键：从后端合并的 auth_account 数据中获取邮箱
     // 后端 getPreferences 接口现在会返回 email 字段（来自 auth_account 表）
     if (form.email) {
@@ -141,7 +193,7 @@ async function confirmAvatar() {
 async function save() {
   saving.value = true
   try {
-    await savePreferences({ ...form, userId: localStorage.getItem('roamly_user_id') || 'user_001' })
+    await savePreferences({ ...form, systemThemeJson: JSON.stringify(systemPalette), userId: localStorage.getItem('roamly_user_id') || 'user_001' })
     if (form.name) { await updateNickname(form.name); userStore.setNickname(form.name) }
     if (avatar.value) userStore.setAvatar(avatar.value)
     await userStore.fetchProfile()
@@ -264,7 +316,7 @@ async function handleLogout() {
   } catch { /* 用户取消 */ }
 }
 
-onMounted(load)
+onMounted(() => { loadSystemPalette(); load() })
 </script>
 
 <template>
@@ -427,6 +479,19 @@ onMounted(load)
 
       <!-- 右：旅行偏好 -->
       <section class="panel prefs">
+        <section class="palette-panel">
+          <button class="palette-trigger" type="button" @click="paletteOpen ? closePalette() : paletteOpen = true">🎨 系统调色板 <span>{{ paletteOpen ? '收起' : '编辑' }}</span></button>
+          <div v-if="paletteOpen" class="palette-popover">
+            <div class="palette-popover-head"><div><h3>系统调色板</h3><p class="palette-hint">调整会即时预览，保存后写入数据库。</p></div><button type="button" class="palette-close" @click="closePalette">×</button></div>
+            <div class="palette-fields">
+              <label>前景色<div class="palette-input"><input type="color" v-model="systemPalette.fg" @input="applySystemPalette" /><input v-model="systemPalette.fg" maxlength="7" @input="applySystemPalette" /></div></label>
+              <label>背景色<div class="palette-input"><input type="color" v-model="systemPalette.bg" @input="applySystemPalette" /><input v-model="systemPalette.bg" maxlength="7" @input="applySystemPalette" /></div></label>
+              <label>强调色<div class="palette-input"><input type="color" v-model="systemPalette.accent" @input="applySystemPalette" /><input v-model="systemPalette.accent" maxlength="7" @input="applySystemPalette" /></div></label>
+            </div>
+            <div class="palette-presets"><button v-for="p in palettePresets" :key="p.name" type="button" :style="{ background: p.bg, color: p.fg, borderColor: p.accent }" @click="Object.assign(systemPalette, p); applySystemPalette()">{{ p.name }}</button></div>
+            <button class="palette-save" type="button" :disabled="saving" @click="saveSystemPalette">{{ saving ? '保存中…' : '保存主题' }}</button>
+          </div>
+        </section>
         <div class="prefs-head">
           <h3>旅行偏好</h3>
           <span class="badge">为 {{ form.name || '旅人' }} 定制</span>
@@ -537,6 +602,23 @@ onMounted(load)
 <style scoped lang="scss">
 .shell { min-height: 100vh; padding-bottom: 90px; }
 .profile-head { width: min(1160px, calc(100% - 40px)); margin: 24px auto 26px; }
+.palette-panel { position: relative; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.palette-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-weight: 800; cursor: pointer; }
+.palette-trigger span { color: var(--ink-2); font-size: 12px; font-weight: 600; }
+.palette-popover { margin-top: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow-soft); }
+.palette-popover-head { display: flex; align-items: flex-start; justify-content: space-between; }
+.palette-popover-head h3 { margin: 0; font-size: 16px; }
+.palette-close { border: 0; background: transparent; color: var(--ink-2); font-size: 22px; line-height: 1; cursor: pointer; }
+.palette-hint { margin-top: 5px; color: var(--ink-2); font-size: 12px; }
+.palette-fields { display: flex; gap: 14px; flex-wrap: wrap; margin: 16px 0 12px; }
+.palette-fields label { display: grid; gap: 7px; color: var(--ink-2); font-size: 12px; font-weight: 700; }
+.palette-input { display: flex; align-items: center; gap: 7px; }
+.palette-input input[type='color'] { width: 34px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.palette-input input[type='text'], .palette-input input:not([type]) { width: 92px; height: 28px; padding: 0 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: 12px ui-monospace, monospace; }
+.palette-presets { display: flex; gap: 8px; flex-wrap: wrap; }
+.palette-presets button { padding: 7px 12px; border: 1px solid; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.palette-save { width: 100%; margin-top: 14px; padding: 10px; border: 0; border-radius: 8px; background: var(--forest); color: #fff; font-weight: 800; cursor: pointer; }
+.palette-save:disabled { opacity: .6; cursor: wait; }
 .eyebrow { color: var(--sunset); font-size: 10px; font-weight: 800; letter-spacing: 0.18em; margin: 0 0 8px; }
 .profile-head h1 { font: 34px "DM Serif Display", "Noto Sans SC"; color: var(--ink); margin: 0; }
 .sub { color: #687873; font-size: 14px; margin: 10px 0 0; }

@@ -7,6 +7,7 @@ import DOMPurify from 'dompurify'
 import { listNotes, getNote, createNote, updateNote, deleteNote,
           getNoteUserId, type NoteDocument } from '@/api/note'
 import { useRightPanelStore } from '@/stores/rightPanel'
+import { getPreferences } from '@/api/user'
 
 // ─── Markdown 引擎 ──────────────────────────────────────
 const md = new MarkdownIt({
@@ -94,6 +95,9 @@ const theme = reactive({
   fg: '#1f2329',
   accent: '#3370ff'
 })
+const useSystemTheme = ref(false)
+const systemTheme = reactive({ bg: '#F7F3EA', fg: '#1D2B27', accent: '#164E42' })
+const effectiveTheme = computed(() => useSystemTheme.value ? systemTheme : theme)
 
 const themePresets = [
   { name: '明亮', bg: '#ffffff', fg: '#1f2329', accent: '#3370ff' },
@@ -111,14 +115,20 @@ const themeRows: { key: 'bg' | 'fg' | 'accent'; label: string }[] = [
 
 function applyTheme() {
   const root = document.documentElement
-  root.style.setProperty('--notes-bg', theme.bg)
-  root.style.setProperty('--notes-fg', theme.fg)
-  root.style.setProperty('--notes-accent', theme.accent)
+  root.style.setProperty('--notes-bg', effectiveTheme.value.bg)
+  root.style.setProperty('--notes-fg', effectiveTheme.value.fg)
+  root.style.setProperty('--notes-accent', effectiveTheme.value.accent)
 }
-watch(theme, applyTheme, { deep: true })
+watch([theme, systemTheme, useSystemTheme], applyTheme, { deep: true })
 
 function themeToJson(): string {
-  return JSON.stringify({ bg: theme.bg, fg: theme.fg, accent: theme.accent })
+  return JSON.stringify({ bg: theme.bg, fg: theme.fg, accent: theme.accent, useSystemTheme: useSystemTheme.value })
+}
+
+async function toggleSystemTheme() {
+  applyTheme()
+  // The checkbox represents an explicit preference, so persist it immediately.
+  await saveDoc()
 }
 
 function loadThemeFromJson(jsonStr?: string) {
@@ -128,6 +138,16 @@ function loadThemeFromJson(jsonStr?: string) {
     if (saved.bg) theme.bg = saved.bg
     if (saved.fg) theme.fg = saved.fg
     if (saved.accent) theme.accent = saved.accent
+    useSystemTheme.value = saved.useSystemTheme === true
+  } catch {}
+}
+
+async function loadSystemTheme() {
+  try {
+    const result = await getPreferences()
+    const saved = result.data?.systemThemeJson ? JSON.parse(result.data.systemThemeJson) : {}
+    Object.assign(systemTheme, { bg: saved.bg || systemTheme.bg, fg: saved.fg || systemTheme.fg, accent: saved.accent || systemTheme.accent })
+    applyTheme()
   } catch {}
 }
 
@@ -213,6 +233,7 @@ async function load() {
 
 onMounted(() => { 
   load()
+  loadSystemTheme()
   applyTheme()
   document.addEventListener('keydown', handleGlobalKeydown)
 })
@@ -516,13 +537,13 @@ function startOutlineResize(e: PointerEvent) {
 </script>
 
 <template>
-  <div class="notes-app" :style="{ background: theme.bg, color: theme.fg }">
+  <div class="notes-app" :style="{ background: effectiveTheme.bg, color: effectiveTheme.fg }">
     <!-- ===== 左侧笔记列表面板（与右侧面板一致） ===== -->
     <Transition name="sidebar-slide-left">
     <aside 
       v-if="showLeftPanel"
       class="left-panel" 
-      :style="{ width: leftPanelWidth + 'px', background: theme.bg, color: theme.fg }"
+      :style="{ width: leftPanelWidth + 'px', background: effectiveTheme.bg, color: effectiveTheme.fg }"
     >
       <!-- 面板工具条 -->
       <div class="left-toolbar">
@@ -547,7 +568,7 @@ function startOutlineResize(e: PointerEvent) {
         </button>
         <button 
           class="new-note-btn" 
-          :style="{ background: theme.accent }" 
+          :style="{ background: effectiveTheme.accent }"
           @click="addDoc('')"
         >
           ＋ 新建笔记
@@ -556,7 +577,7 @@ function startOutlineResize(e: PointerEvent) {
 
       <div class="workspace-mini">
         <span class="workspace-name">
-          <span class="workspace-dot" :style="{ background: theme.accent }">R</span>
+          <span class="workspace-dot" :style="{ background: effectiveTheme.accent }">R</span>
           Roamly 工作台 · {{ currentUserId }}
         </span>
       </div>
@@ -567,7 +588,7 @@ function startOutlineResize(e: PointerEvent) {
           :key="d.id"
           class="note-item"
           :class="{ active: currentId === d.id }"
-          :style="currentId === d.id ? { background: theme.accent + '18', color: theme.accent } : {}"
+          :style="currentId === d.id ? { background: effectiveTheme.accent + '18', color: effectiveTheme.accent } : {}"
           @click="openDoc(d.id!)"
         >
           <div class="note-title">{{ d.title || '未命名笔记' }}</div>
@@ -629,7 +650,8 @@ function startOutlineResize(e: PointerEvent) {
                   <input class="hex-input" v-model="theme[row.key]" maxlength="7" spellcheck="false" />
                 </label>
                 <div class="theme-presets compact-presets"><button v-for="p in themePresets" :key="p.name" class="preset-btn" :style="{ background: p.bg, color: p.fg, borderColor: p.accent }" @click="Object.assign(theme, p)">{{ p.name }}</button></div>
-                <button class="theme-save-btn" :style="{ background: theme.accent }" @click="saveDoc(); themePopoverVisible = false">保存主题</button>
+                <label class="system-theme-check"><input type="checkbox" v-model="useSystemTheme" @change="toggleSystemTheme" /> 应用系统主题</label>
+                <button class="theme-save-btn" :style="{ background: effectiveTheme.accent }" @click="saveDoc(); themePopoverVisible = false">保存主题</button>
               </div>
             </div>
             <span class="save-indicator" :class="{ saving }">
@@ -637,7 +659,7 @@ function startOutlineResize(e: PointerEvent) {
             </span>
             <button 
               class="save-btn" 
-              :style="{ background: theme.accent }"
+              :style="{ background: effectiveTheme.accent }"
               :disabled="saving"
               @click="saveDoc"
             >
@@ -672,7 +694,7 @@ function startOutlineResize(e: PointerEvent) {
     <aside 
       v-if="showRightPanel"
       class="right-panel"
-      :style="{ width: rightPanelWidth + 'px', background: theme.bg }"
+      :style="{ width: rightPanelWidth + 'px', background: effectiveTheme.bg }"
     >
       <!-- 面板收起条 -->
       <div class="right-toolbar">
@@ -715,9 +737,10 @@ function startOutlineResize(e: PointerEvent) {
               @click="Object.assign(theme, p)"
             >{{ p.name }}</button>
           </div>
+          <label class="system-theme-check"><input type="checkbox" v-model="useSystemTheme" @change="toggleSystemTheme" /> 应用系统主题</label>
           <button 
             class="theme-save-btn"
-            :style="{ background: theme.accent }"
+            :style="{ background: effectiveTheme.accent }"
             @click="saveDoc"
           >💾 保存主题</button>
         </div>
@@ -795,6 +818,21 @@ function startOutlineResize(e: PointerEvent) {
 
 <style scoped lang="scss">
 .notes-app {
+  /* Keep the editor's design tokens local; the surrounding app follows the
+     user's system palette independently. */
+  --forest: #164E42;
+  --forest-deep: #0E382E;
+  --roam: #4F8F78;
+  --roam-soft: #E9F1EC;
+  --sunset: #F27A4F;
+  --sunset-soft: #FDEEE6;
+  --paper: #F7F3EA;
+  --card: #FFFDF8;
+  --wash: #F2EDE1;
+  --ink: #1D2B27;
+  --ink-2: #5C6B65;
+  --ink-3: #8C9993;
+  --line: #E7E0D2;
   position: relative;
   display: flex;
   height: 100vh;
@@ -803,6 +841,16 @@ function startOutlineResize(e: PointerEvent) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   background: var(--notes-bg, #ffffff);
   color: var(--notes-fg, #1f2329);
+}
+
+.system-theme-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0;
+  color: var(--notes-fg, #1f2329);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 /* ─── 左侧面板 ─────────────────────────────────── */

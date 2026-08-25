@@ -98,6 +98,7 @@ export function geocodeAddress(address: string) {
 
 // ─── 用户偏好 / 个人资料 ─────────────────────────────────────────────
 export interface UserPreference {
+  systemThemeJson?: string
   id?: number; userId?: string; name?: string; email?: string; phone?: string
   preferenceType?: string; preferenceName?: string
   favoriteDestinations?: string; defaultDepartureCity?: string
