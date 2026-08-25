@@ -58,7 +58,8 @@ public class NoteApplicationService {
      */
     public NoteDocumentResponse getDocByShareToken(String token) {
         LambdaQueryWrapper<NoteDocumentPO> q = new LambdaQueryWrapper<>();
-        q.eq(NoteDocumentPO::getShareToken, token);
+        q.eq(NoteDocumentPO::getShareToken, token)
+         .eq(NoteDocumentPO::getVisibility, "link");
         NoteDocumentPO doc = documentMapper.selectOne(q);
         if (doc == null) {
             throw new BusinessException(404, "分享的笔记不存在或已失效");
@@ -80,7 +81,11 @@ public class NoteApplicationService {
         doc.setCoverUrl(request.getCoverUrl());
         doc.setVisibility("link".equals(request.getVisibility()) ? "link" : "private");
         doc.setStatus("draft");
-        doc.setShareToken(UUID.randomUUID().toString().replace("-", ""));
+        // Only link-visible notes receive a bearer token. Private notes must not
+        // accidentally become readable through a previously issued URL.
+        if ("link".equals(doc.getVisibility())) {
+            doc.setShareToken(newShareToken());
+        }
         doc.setThemeJson(request.getThemeJson());
         doc.setContent(request.getContent());
         doc.setCreatedAt(LocalDateTime.now());
@@ -105,10 +110,26 @@ public class NoteApplicationService {
         if (request.getTitle() != null) {
             doc.setTitle(request.getTitle().isBlank() ? "未命名笔记" : request.getTitle().trim());
         }
-        doc.setDestination(request.getDestination());
-        doc.setCoverUrl(request.getCoverUrl());
+        if (request.getDestination() != null) {
+            doc.setDestination(request.getDestination());
+        }
+        if (request.getCoverUrl() != null) {
+            doc.setCoverUrl(request.getCoverUrl());
+        }
         if (request.getVisibility() != null) {
-            doc.setVisibility("link".equals(request.getVisibility()) ? "link" : "private");
+            String visibility = "link".equals(request.getVisibility()) ? "link" : "private";
+            doc.setVisibility(visibility);
+            if ("link".equals(visibility)) {
+                if (doc.getShareToken() == null || doc.getShareToken().isBlank()) {
+                    doc.setShareToken(newShareToken());
+                }
+            } else {
+                // Revoke the old URL when a note becomes private.
+                doc.setShareToken(null);
+            }
+        }
+        if (!"link".equals(doc.getVisibility())) {
+            doc.setShareToken(null);
         }
         if (request.getThemeJson() != null) {
             doc.setThemeJson(request.getThemeJson());
@@ -158,5 +179,9 @@ public class NoteApplicationService {
 
     private String blankDefault(String v, String d) {
         return v == null || v.isBlank() ? d : v;
+    }
+
+    private String newShareToken() {
+        return UUID.randomUUID().toString().replace("-", "");
     }
 }
