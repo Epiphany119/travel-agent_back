@@ -6,6 +6,7 @@
       <AppHeader />
       <router-view />
     </div>
+    <GlobalRightPanel />
   </div>
 </template>
 
@@ -14,6 +15,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import GlobalRightPanel from '@/components/GlobalRightPanel.vue'
 
 const route = useRoute()
 const isAuthPage = computed(() => route.path === '/auth' || route.path.startsWith('/auth/'))
@@ -59,6 +61,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 系统级三层布局：左侧边栏 | 中间主体 | 右侧面板 */
 .app-layout {
   display: flex;
   min-height: 100vh;

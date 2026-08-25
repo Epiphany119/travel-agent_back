@@ -2,13 +2,12 @@ import request from './index'
 
 // ─── 类型定义 ────────────────────────────────────────────────────────────
 
-/** 笔记内容块 */
-export interface NoteBlock {
-  id?: number
-  type: 'h1' | 'h2' | 'h3' | 'p' | 'list' | 'todo' | 'image' | 'callout' | 'code'
-  text: string
-  sortOrder?: number
-  attrsJson?: string
+/** 主题设置 */
+export interface ThemeSettings {
+  bg: string
+  fg: string
+  accent: string
+  fontSize?: number
 }
 
 /** 笔记文档 */
@@ -21,9 +20,11 @@ export interface NoteDocument {
   visibility?: string
   shareToken?: string
   status?: string
+  themeJson?: string
+  /** 完整 Markdown 内容 */
+  content?: string
   createdAt?: string
   updatedAt?: string
-  blocks?: NoteBlock[]
 }
 
 type ApiEnvelope<T> = { data: T; message?: string; code?: number }
@@ -55,7 +56,14 @@ export async function getSharedNote(token: string): Promise<NoteDocument> {
 
 /** 创建笔记 */
 export async function createNote(data: NoteDocument): Promise<NoteDocument> {
-  const payload = { title: data.title, destination: data.destination, coverUrl: data.coverUrl, visibility: data.visibility, blocks: data.blocks }
+  const payload = {
+    title: data.title,
+    destination: data.destination,
+    coverUrl: data.coverUrl,
+    visibility: data.visibility,
+    themeJson: data.themeJson,
+    content: data.content
+  }
   return (await request.post<unknown, ApiEnvelope<NoteDocument>>(
     '/notes', payload, { params: { userId: getNoteUserId() } }
   )).data
@@ -63,7 +71,14 @@ export async function createNote(data: NoteDocument): Promise<NoteDocument> {
 
 /** 更新笔记 */
 export async function updateNote(id: number, data: NoteDocument): Promise<NoteDocument> {
-  const payload = { title: data.title, destination: data.destination, coverUrl: data.coverUrl, visibility: data.visibility, blocks: data.blocks }
+  const payload = {
+    title: data.title,
+    destination: data.destination,
+    coverUrl: data.coverUrl,
+    visibility: data.visibility,
+    themeJson: data.themeJson,
+    content: data.content
+  }
   return (await request.put<unknown, ApiEnvelope<NoteDocument>>(
     `/notes/${id}`, payload, { params: { userId: getNoteUserId() } }
   )).data

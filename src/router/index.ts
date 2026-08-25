@@ -8,7 +8,7 @@ const router = createRouter({
     { path: '/users/search', name: 'UserSearch', component: () => import('@/views/UserSearchView.vue') },
     { path: '/notes/:id', name: 'NoteDetail', component: () => import('@/views/NoteDetailView.vue') },
     { path: '/publish', name: 'PublishNote', component: () => import('@/views/PublishNoteView.vue') },
-    { path: '/', name: 'Chat', component: () => import('@/views/ChatView.vue') },
+    { path: '/', redirect: '/notes' },
     { path: '/profile', name: 'Profile', component: () => import('@/views/UserProfile.vue') },
     { path: '/inspirations', name: 'Inspirations', component: () => import('@/views/InspirationView.vue') },
     { path: '/notes', name: 'Notes', component: () => import('@/views/NotesView.vue') },

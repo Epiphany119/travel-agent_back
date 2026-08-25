@@ -1,31 +1,133 @@
 <script setup lang="ts">
-import { ref, computed, reactive, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, nextTick, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { uploadImage } from '@/api/user'
-import { marked } from 'marked'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import { listNotes, getNote, createNote, updateNote, deleteNote,
-          getNoteUserId, type NoteDocument, type NoteBlock } from '@/api/note'
+          getNoteUserId, type NoteDocument } from '@/api/note'
+import { useRightPanelStore } from '@/stores/rightPanel'
+
+// ─── Markdown 引擎 ──────────────────────────────────────
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  breaks: true,
+  typographer: true
+})
+
+md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]
+  token.attrSet('class', 'md-link')
+  token.attrSet('data-link', 'true')
+  return self.renderToken(tokens, idx, options)
+}
+
+function renderMarkdown(source: string): string {
+  if (!source) return ''
+  try {
+    const raw = md.render(source)
+    return DOMPurify.sanitize(raw, {
+      ADD_TAGS: ['img', 'hr', 'input', 'figure', 'figcaption'],
+      ADD_ATTR: ['contenteditable', 'draggable', 'data-note-id', 'data-link']
+    })
+  } catch {
+    return source
+  }
+}
 
 // ─── 状态 ───────────────────────────────────────────────
-const docs = ref<NoteDocument[]>([])
 const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const currentId = ref<number | null>(null)
-const curDoc = reactive<NoteDocument>({ title: '', blocks: [] })
+const docs = ref<NoteDocument[]>([])
+const curDoc = reactive<NoteDocument>({ title: '', content: '', updatedAt: '' })
 
-// 鼠标悬停的块索引 - 用于控制工具条显示
-const hoveredBlockIndex = ref<number | null>(null)
-// 当前聚焦的块索引
-const focusedBlockIndex = ref<number | null>(null)
-const formatToolbarVisible = ref(false)
+const editorContent = ref('')
+const editorRef = ref<HTMLTextAreaElement | null>(null)
+const showPreview = ref(true)
+const isEditorMode = ref(false)
 
-// 块 DOM 元素引用
-const blockRefs = new Map<number, HTMLElement>()
-const mdInput = ref<HTMLInputElement | null>(null)
+// 全局右侧面板
+const rightPanel = useRightPanelStore()
 
-// ─── 列表加载 ───────────────────────────────────────────
+// 右侧信息栏折叠状态
+const selectionThemeVisible = ref(true)
+const outlineVisible = ref(true)
+const infoVisible = ref(false)
+const shortcutsVisible = ref(true)
+
+const currentUserId = computed(() => getNoteUserId())
+
+// ─── 主题 ────────────────────────────────────────────────
+const theme = reactive({
+  bg: '#ffffff',
+  fg: '#1f2329',
+  accent: '#3370ff'
+})
+
+const themePresets = [
+  { name: '明亮', bg: '#ffffff', fg: '#1f2329', accent: '#3370ff' },
+  { name: '护眼', bg: '#f5f0e1', fg: '#3d3527', accent: '#c4702b' },
+  { name: '夜蓝', bg: '#1a1a2e', fg: '#e0e0e0', accent: '#5378ff' },
+  { name: '森林', bg: '#f0f7f1', fg: '#2d3e35', accent: '#4a9b6e' },
+  { name: '樱花', bg: '#fff5f7', fg: '#3d2937', accent: '#e8758e' },
+  { name: '石墨', bg: '#2c2c2c', fg: '#e8e8e8', accent: '#888888' },
+]
+
+function applyTheme() {
+  const root = document.documentElement
+  root.style.setProperty('--notes-bg', theme.bg)
+  root.style.setProperty('--notes-fg', theme.fg)
+  root.style.setProperty('--notes-accent', theme.accent)
+}
+watch(theme, applyTheme, { deep: true })
+
+function themeToJson(): string {
+  return JSON.stringify({ bg: theme.bg, fg: theme.fg, accent: theme.accent })
+}
+
+function loadThemeFromJson(jsonStr?: string) {
+  if (!jsonStr) return
+  try {
+    const saved = JSON.parse(jsonStr)
+    if (saved.bg) theme.bg = saved.bg
+    if (saved.fg) theme.fg = saved.fg
+    if (saved.accent) theme.accent = saved.accent
+  } catch {}
+}
+
+// ─── 时间格式化 ──────────────────────────────────────────
+function formatTime(dateStr?: string): string {
+  if (!dateStr) return '刚刚'
+  try {
+    let parsed: Date
+    if (dateStr.includes('T')) {
+      const [datePart, timePart] = dateStr.split('T')
+      parsed = new Date(datePart + 'T' + (timePart || '00:00:00') + '.000')
+    } else {
+      parsed = new Date(dateStr)
+    }
+    if (isNaN(parsed.getTime())) return '刚刚'
+    const now = new Date()
+    const diffMs = now.getTime() - parsed.getTime()
+    const diffMin = Math.floor(diffMs / 60000)
+    if (diffMin < 1) return '刚刚'
+    if (diffMin < 60) return `${diffMin} 分钟前`
+    const y = parsed.getFullYear()
+    const m = String(parsed.getMonth() + 1).padStart(2, '0')
+    const d = String(parsed.getDate()).padStart(2, '0')
+    const h = String(parsed.getHours()).padStart(2, '0')
+    const mi = String(parsed.getMinutes()).padStart(2, '0')
+    return `${y}-${m}-${d} ${h}:${mi}`
+  } catch { return '刚刚' }
+}
+
+const displayTime = computed(() => formatTime(curDoc.updatedAt))
+const renderedPreview = computed(() => renderMarkdown(editorContent.value))
+
+// ─── 列表加载 ────────────────────────────────────────────
 async function load() {
   loading.value = true
   try {
@@ -36,57 +138,15 @@ async function load() {
   } catch (e) { console.error(e) } finally { loading.value = false }
 }
 
-onMounted(() => load())
+onMounted(() => { 
+  load()
+  applyTheme()
+  document.addEventListener('keydown', handleGlobalKeydown)
+})
 
-function openMarkdownPicker() { mdInput.value?.click() }
-function normalizeInlineMarkdown(value: string) { return value.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') }
-async function importMarkdown(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  const blocks: NoteBlock[] = []
-  for (const line of (await file.text()).split(/\r?\n/)) {
-    if (!line.trim()) continue
-    const image = line.match(/^!\[(.*?)\]\((.*?)\)$/)
-    const heading = line.match(/^(#{1,3})\s+(.*)$/)
-    const todo = line.match(/^[-*]\s+\[[ xX]\]\s+(.*)$/)
-    const list = line.match(/^[-*+]\s+(.*)$/)
-    if (image) blocks.push({ type: 'image', text: image[2], attrsJson: JSON.stringify({ alt: image[1] }) })
-    else if (heading) blocks.push({ type: heading[1].length === 1 ? 'h1' : 'h2', text: heading[2] })
-    else if (todo) blocks.push({ type: 'todo', text: todo[1] })
-    else if (list) blocks.push({ type: 'list', text: list[1] })
-    else blocks.push({ type: 'p', text: normalizeInlineMarkdown(line.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, '$2 ($1)')) })
-  }
-  curDoc.title = file.name.replace(/\.md$/i, '')
-  curDoc.blocks = blocks.length ? blocks : [emptyBlock()]
-  if (currentId.value == null) {
-    try {
-      const created = await createNote({ title: curDoc.title, blocks: curDoc.blocks, visibility: 'private' })
-      currentId.value = created.id || null
-      curDoc.id = created.id
-      curDoc.userId = created.userId
-      docs.value.unshift(created)
-    } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || e?.message || '导入保存失败')
-      return
-    }
-  } else {
-    try {
-      await updateNote(currentId.value, { ...curDoc, blocks: curDoc.blocks })
-      docs.value = await listNotes()
-    } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || e?.message || '导入保存失败')
-      return
-    }
-  }
-  await nextTick(); setAllBlockContents(); ElMessage.success('Markdown 已导入并保存')
-  ;(event.target as HTMLInputElement).value = ''
-}
-async function insertImage(event: Event) {
-  const input = event.target as HTMLInputElement; const file = input.files?.[0]
-  if (!file) return
-  try { const result = await uploadImage(file, 'note'); const url = result.data?.url; if (!url) throw new Error('上传未返回图片地址'); (curDoc.blocks as NoteBlock[]).push({ type: 'image', text: url, attrsJson: JSON.stringify({ alt: file.name }) }); await nextTick(); setAllBlockContents(); ElMessage.success('图片已插入') } catch (e: any) { ElMessage.error(e?.response?.data?.message || e?.message || '图片上传失败') } finally { input.value = '' }
-}
-function handleEditorClick(event: MouseEvent) { const link = (event.target as HTMLElement).closest('[data-note-id]') as HTMLElement | null; if (link) { event.preventDefault(); router.push('/notes/' + link.dataset.noteId) } }
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleGlobalKeydown)
+})
 
 // ─── 打开笔记 ───────────────────────────────────────────
 async function openDoc(id: number) {
@@ -98,92 +158,54 @@ async function openDoc(id: number) {
     curDoc.destination = d.destination || ''
     curDoc.coverUrl = d.coverUrl || ''
     curDoc.visibility = d.visibility || 'private'
-    curDoc.blocks = (d.blocks && d.blocks.length ? d.blocks : [emptyBlock()])
-    // 下一轮设置 DOM 内容
-    nextTick(() => {
-      setAllBlockContents()
-    })
+    curDoc.updatedAt = d.updatedAt || ''
+    curDoc.themeJson = d.themeJson || ''
+    curDoc.content = d.content || ''
+    
+    editorContent.value = d.content || ''
+    
+    if (d.themeJson) loadThemeFromJson(d.themeJson)
   } catch (e: any) { ElMessage.error(e?.message || '打开失败') }
 }
 
-// 初始化时设置所有块的 DOM 内容
-function setAllBlockContents() {
-  curDoc.blocks?.forEach((b, i) => {
-    const el = blockRefs.get(i)
-    if (el && el.querySelector('.editable')) {
-      ;(el.querySelector('.editable') as HTMLElement).innerHTML = renderMarkdownInline(b.text || '')
-    }
-  })
-}
-
-// 设置单个块的 DOM 内容
-function setBlockContent(index: number, text: string) {
-  const el = blockRefs.get(index)
-  if (el) {
-    const editable = el.querySelector('.editable') as HTMLElement
-    if (editable && editable.innerText !== text) {
-      editable.innerHTML = renderMarkdownInline(text)
-    }
-  }
-}
-
-function renderMarkdownInline(source: string) {
-  const links: string[] = []
-  const withWikiLinks = source.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, (_match, id, label) => {
-    const index = links.push('<a class="note-link" data-note-id="' + String(id).replace(/"/g, '') + '">' + (label || id) + '</a>') - 1
-    return '@@WIKILINK' + index + '@@'
-  })
-  let html = String(marked.parseInline(withWikiLinks, { async: false }))
-  links.forEach((link, index) => { html = html.replace('@@WIKILINK' + index + '@@', link) })
-  return html
-}
-
-// ─── 新增笔记 ───────────────────────────────────────────
-async function addDoc() {
+// ─── 保存笔记 ────────────────────────────────────────────
+async function saveDoc() {
+  if (currentId.value == null) { await addDoc(); return }
+  saving.value = true
   try {
-    const d = await createNote({ title: '新笔记', blocks: [emptyBlock()], visibility: 'private' })
+    const payload = {
+      title: curDoc.title || '未命名笔记',
+      content: editorContent.value,
+      destination: curDoc.destination || '',
+      coverUrl: curDoc.coverUrl || '',
+      visibility: curDoc.visibility || 'private',
+      themeJson: themeToJson()
+    }
+    const d = await updateNote(currentId.value, payload as NoteDocument)
+    ElMessage.success('已保存')
+    curDoc.updatedAt = d.updatedAt || new Date().toISOString().replace('Z', '')
+    curDoc.content = editorContent.value
+    curDoc.themeJson = d.themeJson || themeToJson()
+    docs.value = await listNotes()
+  } catch (e: any) {
+    console.error('Save failed:', e)
+    ElMessage.error(e?.message || '保存失败')
+  } finally { saving.value = false }
+}
+
+async function addDoc(initialContent = '') {
+  try {
+    const d = await createNote({
+      title: '新笔记',
+      content: initialContent,
+      visibility: 'private',
+      themeJson: themeToJson()
+    })
     docs.value.unshift(d)
     await openDoc(d.id!)
   } catch (e: any) { ElMessage.error(e?.message || '创建失败') }
 }
 
-// ─── 保存 ───────────────────────────────────────────────
-async function saveDoc() {
-  if (currentId.value == null) { await addDoc(); return }
-  saving.value = true
-  try {
-    // 从 DOM 读取最新文本
-    const blocksFromDom = curDoc.blocks?.map((b, idx) => {
-      const el = blockRefs.get(idx)
-      let text = b.text
-      if (el) {
-        const editable = el.querySelector('.editable') as HTMLElement
-        if (editable) {
-          text = editable.innerText
-        }
-      }
-      return { ...b, text }
-    }) || []
-
-    const cleaned = { 
-      ...curDoc, 
-      blocks: blocksFromDom
-        .filter(b => !(b.type === 'p' && !b.text?.trim()))
-    }
-
-    const d = await updateNote(currentId.value, cleaned)
-    ElMessage.success('已保存')
-    // 更新本地数据
-    curDoc.blocks = cleaned.blocks
-    // 刷新列表
-    docs.value = (await listNotes())
-  } catch (e: any) { 
-    console.error('Save failed:', e)
-    ElMessage.error(e?.message || '保存失败') 
-  } finally { saving.value = false }
-}
-
-// ─── 删除 ───────────────────────────────────────────────
 async function removeDoc() {
   if (currentId.value == null) return
   try {
@@ -191,701 +213,1262 @@ async function removeDoc() {
     await deleteNote(currentId.value)
     ElMessage.success('已删除')
     currentId.value = null
-    curDoc.blocks = []
     curDoc.title = ''
+    curDoc.content = ''
+    curDoc.updatedAt = ''
+    editorContent.value = ''
     await load()
-  } catch (e) {}
+  } catch {}
 }
 
-// ─── 块操作 ─────────────────────────────────────────────
-function emptyBlock(type = 'p'): NoteBlock { return { type: type as any, text: '' } }
-
-function addBlockAfter(index: number, type = 'p') {
-  // 先从 DOM 保存当前块内容
-  saveBlockFromDom(index)
+// ─── 链接点击处理 ───────────────────────────────────────
+function handlePreviewClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const linkEl = target.closest('a') as HTMLAnchorElement | null
+  if (!linkEl) return
   
-  const list = curDoc.blocks as NoteBlock[]
-  list.splice(index + 1, 0, emptyBlock(type))
+  const url = linkEl.getAttribute('href') || linkEl.getAttribute('data-href') || ''
+  if (!url) return
   
-  // DOM 更新后设置新块内容并聚焦
-  nextTick(() => {
-    setAllBlockContents()
-    const newEl = blockRefs.get(index + 1)
-    const editable = newEl?.querySelector('.editable') as HTMLElement
-    editable?.focus()
-  })
-}
-
-function addBlockAtTop(type = 'h1') {
-  const list = curDoc.blocks as NoteBlock[]
-  list.unshift(emptyBlock(type))
-}
-
-function removeBlock(index: number) {
-  const list = curDoc.blocks as NoteBlock[]
-  if (list.length <= 1) { 
-    list[0] = emptyBlock()
-    nextTick(() => setAllBlockContents())
-    return 
+  e.preventDefault()
+  e.stopPropagation()
+  
+  if (url.startsWith('mailto:')) {
+    window.open(url, '_blank')
+    return
   }
-  list.splice(index, 1)
-  nextTick(() => {
-    setAllBlockContents()
-    const prevIdx = Math.max(0, index - 1)
-    const prevEl = blockRefs.get(prevIdx)
-    const editable = prevEl?.querySelector('.editable') as HTMLElement
-    editable?.focus()
-  })
-}
-
-function moveBlock(index: number, dir: -1 | 1) {
-  saveBlockFromDom(index)
-  const list = curDoc.blocks as NoteBlock[]
-  const to = index + dir
-  if (to < 0 || to >= list.length) return
-  ;[list[index], list[to]] = [list[to], list[index]]
-  nextTick(() => setAllBlockContents())
-}
-
-function changeBlockType(index: number, type: string) {
-  saveBlockFromDom(index)
-  const list = curDoc.blocks as NoteBlock[]
-  if (list[index]) {
-    list[index] = { ...list[index], type: type as any }
-  }
-  nextTick(() => {
-    setAllBlockContents()
-    // 保持聚焦
-    const el = blockRefs.get(index)
-    const editable = el?.querySelector('.editable') as HTMLElement
-    if (editable) {
-      editable.focus()
-      // 恢复光标到末尾
-      const range = document.createRange()
-      range.selectNodeContents(editable)
-      range.collapse(false)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    }
-  })
-}
-
-// 从 DOM 保存块文本到响应式数据
-function saveBlockFromDom(index: number) {
-  const el = blockRefs.get(index)
-  if (el && curDoc.blocks?.[index]) {
-    const editable = el.querySelector('.editable') as HTMLElement
-    if (editable) {
-      curDoc.blocks[index].text = editable.innerText
-    }
-  }
-}
-
-// 处理键盘事件
-function handleKeydown(index: number, e: KeyboardEvent) {
-  // Enter 键 - 创建新块
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    saveBlockFromDom(index)
-    
-    const block = curDoc.blocks?.[index]
-    // 列表/待办且为空时转为段落
-    if (block && (block.type === 'list' || block.type === 'todo') && !block.text?.trim()) {
-      changeBlockType(index, 'p')
-      return
-    }
-    // 继承列表/待办类型
-    const newType = (block?.type === 'list' || block?.type === 'todo') ? block.type : 'p'
-    addBlockAfter(index, newType)
+  if (url.startsWith('tel:')) {
+    window.open(url, '_blank')
     return
   }
   
-  // Backspace 在空块上
-  if (e.key === 'Backspace') {
-    const el = blockRefs.get(index)
-    if (!el) return
-    const editable = el.querySelector('.editable') as HTMLElement
-    if (editable && !editable.innerText) {
-      const block = curDoc.blocks?.[index]
-      if (block && block.type !== 'p') {
-        e.preventDefault()
-        changeBlockType(index, 'p')
-      } else if (curDoc.blocks && curDoc.blocks.length > 1) {
-        e.preventDefault()
-        removeBlock(index)
-      }
+  const title = linkEl.textContent?.trim() || url
+  // 在全局右侧面板打开链接预览
+  rightPanel.openLink({ url, title, })
+}
+
+// ─── Markdown 导入 ──────────────────────────────────────
+const mdInput = ref<HTMLInputElement | null>(null)
+
+function openMdPicker() { mdInput.value?.click() }
+
+async function importMarkdown(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const title = file.name.replace(/\.md$/i, '')
+    
+    if (currentId.value != null) {
+      // 更新现有文档
+      editorContent.value = text
+      curDoc.title = title
+      await saveDoc()
+    } else {
+      // 创建新文档（带内容）
+      await addDoc(text)
+      // addDoc 会打开新文档，内容已传入
+      curDoc.title = title
+      await saveDoc()
     }
+    ElMessage.success('Markdown 已导入')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '导入失败')
+  }
+  ;(event.target as HTMLInputElement).value = ''
+}
+
+// ─── 拖拽调整面板宽度（修复版） ────────────────────────────
+const leftPanelWidth = ref(220)
+const rightPanelWidth = ref(320)
+const showRightPanel = ref(true)
+const showLeftPanel = ref(true)
+
+function onLeftHandleMouseDown(e: MouseEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  // 按下时立即对齐鼠标位置，避免“拖一段才动”
+  leftPanelWidth.value = Math.min(400, Math.max(160, e.clientX))
+
+  const handleMove = (ev: MouseEvent) => {
+    const newWidth = Math.min(400, Math.max(160, ev.clientX))
+    leftPanelWidth.value = newWidth
+  }
+
+  const handleUp = () => {
+    document.removeEventListener('mousemove', handleMove)
+    document.removeEventListener('mouseup', handleUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', handleMove)
+  document.addEventListener('mouseup', handleUp)
+}
+
+function onRightHandleMouseDown(e: MouseEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  const windowWidth = window.innerWidth
+  rightPanelWidth.value = Math.min(600, Math.max(240, windowWidth - e.clientX))
+
+  const handleMove = (ev: MouseEvent) => {
+    const winW = window.innerWidth
+    const newWidth = Math.min(600, Math.max(240, winW - ev.clientX))
+    rightPanelWidth.value = newWidth
+  }
+
+  const handleUp = () => {
+    document.removeEventListener('mousemove', handleMove)
+    document.removeEventListener('mouseup', handleUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', handleMove)
+  document.addEventListener('mouseup', handleUp)
+}
+
+// 快捷键
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault()
+    saveDoc()
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+    e.preventDefault()
+    showPreview.value = !showPreview.value
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+    e.preventDefault()
+    showRightPanel.value = !showRightPanel.value
   }
 }
 
-// 处理 input 事件 - 只保存到内部状态，不触发重渲染
-function handleInput(index: number, e: Event) {
-  const el = e.target as HTMLElement
-  if (curDoc.blocks?.[index]) {
-    curDoc.blocks[index].text = el.innerText
-  }
-}
+// ─── 字数统计 ───────────────────────────────────────────
+const wordCount = computed(() => {
+  const text = editorContent.value
+  if (!text) return 0
+  const chinese = (text.match(/[\u4e00-\u9fa5]/g) || []).length
+  const english = (text.match(/[a-zA-Z]+/g) || []).length
+  return chinese + english
+})
 
-// 处理 focus 事件
-function handleFocus(index: number) {
-  focusedBlockIndex.value = index
-}
-
-// 处理 blur 事件
-function handleBlur(index: number) {
-  saveBlockFromDom(index)
-  focusedBlockIndex.value = null
-}
-
-// 鼠标进入块 - 显示工具条
-function handleMouseEnter(index: number) {
-  hoveredBlockIndex.value = index
-}
-
-// 鼠标离开块 - 隐藏工具条（如果没有聚焦）
-function handleMouseLeave(index: number) {
-  if (focusedBlockIndex.value !== index) {
-    hoveredBlockIndex.value = null
-  }
-}
-
-// 注册块 DOM 引用
-function registerBlockRef(index: number, el: HTMLElement | null) {
-  if (el) {
-    blockRefs.set(index, el)
-  } else {
-    blockRefs.delete(index)
-  }
-}
-
-// 监听 blocks 变化，清理旧引用
-watch(() => curDoc.blocks?.length, () => {
-  // 重新注册所有 ref
-  nextTick(() => {
-    setAllBlockContents()
+// ─── 大纲提取 ───────────────────────────────────────────
+const outline = computed(() => {
+  const lines = editorContent.value.split('\n')
+  const result: { level: number; text: string; line: number }[] = []
+  lines.forEach((line, idx) => {
+    const match = line.match(/^(#{1,3})\s+(.+)$/)
+    if (match) {
+      result.push({ level: match[1].length, text: match[2], line: idx })
+    }
   })
+  return result
 })
 
-onBeforeUnmount(() => {
-  blockRefs.clear()
-})
+function scrollToHeading(line: number) {
+  const ta = editorRef.value
+  if (ta) {
+    const lines = editorContent.value.split('\n')
+    let pos = 0
+    for (let i = 0; i < line; i++) {
+      pos += lines[i].length + 1
+    }
+    ta.focus()
+    ta.setSelectionRange(pos, pos + (lines[line]?.length || 0))
+    const lineHeight = 24
+    ta.scrollTop = line * lineHeight
+  }
+}
 </script>
 
 <template>
-  <main class="notes-page">
-    <!-- 左：笔记列表 -->
-    <aside class="list-pane">
-      <div class="workspace-head"><div class="workspace-logo">R</div><div><b>Roamly 工作台</b><small>个人空间</small></div><span class="workspace-more">⌄</span></div>
-      <div class="list-head">
-        <div class="quick-row"><span class="eyebrow">旅行笔记</span><button class="icon-btn" title="新建笔记" @click="addDoc">＋</button></div>
-        <button class="new-btn" @click="addDoc">＋ 新建笔记</button>
+  <div class="notes-app" :style="{ background: theme.bg, color: theme.fg }">
+    <!-- ===== 左侧笔记列表面板（与右侧面板一致） ===== -->
+    <aside 
+      v-if="showLeftPanel"
+      class="left-panel" 
+      :style="{ width: leftPanelWidth + 'px', background: theme.bg, color: theme.fg }"
+    >
+      <!-- 面板工具条 -->
+      <div class="left-toolbar">
+        <span class="left-toolbar-title">🗂 笔记列表</span>
+        <button 
+          class="panel-collapse-btn"
+          title="收起左侧面板"
+          @click="showLeftPanel = false"
+        >◂</button>
       </div>
-      <nav class="side-nav"><span class="side-nav-item active">▤ <span>我的笔记</span></span><span class="side-nav-item">☆ <span>收藏的笔记</span></span><span class="side-nav-item">⌁ <span>与我共享</span></span></nav>
-      <div class="note-ul" v-loading="loading">
+
+      <div class="panel-toolbar">
+        <input 
+          ref="mdInput" 
+          type="file" 
+          accept=".md,text/markdown" 
+          hidden 
+          @change="importMarkdown" 
+        />
+        <button class="toolbar-btn" @click="openMdPicker" title="导入 Markdown">
+          📥 导入 MD
+        </button>
+        <button 
+          class="new-note-btn" 
+          :style="{ background: theme.accent }" 
+          @click="addDoc('')"
+        >
+          ＋ 新建笔记
+        </button>
+      </div>
+
+      <div class="workspace-mini">
+        <span class="workspace-name">
+          <span class="workspace-dot" :style="{ background: theme.accent }">R</span>
+          Roamly 工作台 · {{ currentUserId }}
+        </span>
+      </div>
+
+      <div class="notes-list" v-loading="loading">
         <button
           v-for="d in docs"
           :key="d.id"
           class="note-item"
           :class="{ active: currentId === d.id }"
+          :style="currentId === d.id ? { background: theme.accent + '18', color: theme.accent } : {}"
           @click="openDoc(d.id!)"
         >
-          <b>{{ d.title || '未命名笔记' }}</b>
-          <small v-if="d.destination">📍 {{ d.destination }}</small>
+          <div class="note-title">{{ d.title || '未命名笔记' }}</div>
+          <div class="note-time">{{ formatTime(d.updatedAt) }}</div>
         </button>
-        <p v-if="!loading && docs.length === 0" class="empty-list">还没有笔记，点右上角新建。</p>
+        <p v-if="!loading && docs.length === 0" class="empty-hint">
+          还没有笔记，点上方新建。
+        </p>
       </div>
-      <div class="list-foot"><span class="user-dot">{{ getNoteUserId().slice(-1) }}</span><span>{{ getNoteUserId() }}</span><span class="foot-more">···</span></div>
+
+      <div class="panel-footer">
+        <span>{{ currentUserId }}</span>
+      </div>
     </aside>
 
-    <!-- 右：编辑器 -->
-    <section class="editor-pane">
-      <!-- 顶部工具条 -->
-      <header class="tb" v-if="curDoc.blocks?.length">
-        <div class="breadcrumbs"><span>我的笔记</span><i>/</i><b>{{ curDoc.title || '未命名笔记' }}</b></div>
-        <div class="tb-actions">
-          <input ref="mdInput" type="file" accept=".md,text/markdown" hidden @change="importMarkdown" />
-          <input id="note-image-input" type="file" accept="image/*" hidden @change="insertImage" />
-          <button class="toolbar-btn" title="显示格式工具" :class="{ selected: formatToolbarVisible }" @click="formatToolbarVisible = !formatToolbarVisible">格式</button>
-          <button class="toolbar-btn" title="导入 Markdown" @click="openMarkdownPicker">导入 MD</button>
-          <label class="toolbar-btn" for="note-image-input" title="上传图片">图片</label>
-          <span class="save-state">{{ saving ? '保存中…' : '已保存' }}</span><button class="ghost" title="删除笔记" @click="removeDoc">⌫</button>
-          <button class="share-btn">分享</button><button class="primary" :disabled="saving" @click="saveDoc">{{ saving ? '保存中…' : '保存' }}</button>
+    <!-- ===== 左侧拖拽手柄 ===== -->
+    <div 
+      v-if="showLeftPanel"
+      class="drag-handle left-handle" 
+      @mousedown="onLeftHandleMouseDown"
+    ></div>
+
+    <!-- ===== 左栏收起后的展开按钮 ===== -->
+    <button
+      v-if="!showLeftPanel"
+      class="left-restore-btn"
+      title="展开笔记列表"
+      @click="showLeftPanel = true"
+    >▸</button>
+
+    <!-- ===== 中间编辑区 ===== -->
+    <main class="center-panel">
+      <header class="editor-toolbar" v-if="curDoc.id">
+        <div class="breadcrumb">
+          <span>我的笔记</span>
+          <i>/</i>
+          <b>{{ curDoc.title || '未命名笔记' }}</b>
+        </div>
+        
+        <div class="toolbar-right">
+          <input 
+            v-model="curDoc.title" 
+            class="title-input" 
+            placeholder="标题"
+          />
+          
+          <div class="tool-group">
+            <button 
+              class="tool-btn" 
+              :class="{ active: isEditorMode }"
+              @click="isEditorMode = true" 
+              title="编辑模式"
+            >✏️ 编辑</button>
+            <button 
+              class="tool-btn" 
+              :class="{ active: showPreview && !isEditorMode }"
+              @click="isEditorMode = false; showPreview = true" 
+              title="预览模式"
+            >👁 预览</button>
+            <button 
+              class="tool-btn" 
+              :class="{ active: showPreview && isEditorMode }"
+              @click="showPreview = !showPreview" 
+              title="切换预览 (Ctrl+E)"
+            >
+              {{ showPreview ? '📝+👁' : '📝' }}
+            </button>
+          </div>
+          
+          <div class="tool-group">
+            <button class="tool-btn" @click="selectionThemeVisible = !selectionThemeVisible" title="主题">🎨</button>
+            <span class="save-indicator" :class="{ saving }">
+              {{ saving ? '保存中…' : '已保存' }}
+            </span>
+            <button 
+              class="save-btn" 
+              :style="{ background: theme.accent }"
+              :disabled="saving"
+              @click="saveDoc"
+            >
+              {{ saving ? '保存中…' : '保存' }}
+            </button>
+          </div>
         </div>
       </header>
 
-      <div class="editor-scroll" v-if="curDoc.blocks?.length">
-        <div class="doc" @click="handleEditorClick">
-          <div class="doc-meta"><span class="doc-badge">旅行笔记</span><span>最后编辑于刚刚</span></div>
-          <!-- 标题 -->
-          <input
-            v-model="curDoc.title"
-            class="doc-title"
-            placeholder="标题"
-          />
+      <div class="editor-body" v-if="curDoc.id">
+        <div class="editor-area">
+          <!-- 编辑文本区 -->
+          <div class="editor-main" :class="{ 'half': showPreview && isEditorMode }">
+            <textarea
+              v-if="isEditorMode"
+              ref="editorRef"
+              v-model="editorContent"
+              class="md-textarea"
+              placeholder="在此输入 Markdown 内容...
 
-          <!-- 内容块 -->
-          <div
-            v-for="(b, i) in curDoc.blocks"
-            :key="'blk' + i"
-            :data-block-index="i"
-            class="block-wrapper"
-            :ref="(el) => registerBlockRef(i, el as HTMLElement | null)"
-          >
-            <!-- 左侧工具条 -->
+支持:
+# 标题 ## 子标题
+- 列表项
+- [x] 待办项
+**粗体** *斜体* `代码`
+[链接](url)
+--- 分割线
+> 引用块"
+              spellcheck="false"
+            ></textarea>
+            
+            <!-- 预览模式 -->
             <div 
-              class="block-tools" 
-              :class="{ visible: formatToolbarVisible && focusedBlockIndex === i }"
-            >
-              <button class="tool-btn" title="转为标题1" @click="changeBlockType(i, 'h1')">H1</button>
-              <button class="tool-btn" title="转为标题2" @click="changeBlockType(i, 'h2')">H2</button>
-              <button class="tool-btn" title="转为正文" @click="changeBlockType(i, 'p')">P</button>
-              <button class="tool-btn" title="转为清单" @click="changeBlockType(i, 'list')">•</button>
-              <button class="tool-btn" title="转为待办" @click="changeBlockType(i, 'todo')">☐</button>
-              <div class="tool-divider"></div>
-              <button class="tool-btn arrow" title="上移" @click="moveBlock(i, -1)">▲</button>
-              <button class="tool-btn arrow" title="下移" @click="moveBlock(i, 1)">▼</button>
-              <button class="tool-btn danger" title="删除" @click="removeBlock(i)">✕</button>
-            </div>
-
-            <!-- 块内容 - 不使用 Vue 文本插值，用 DOM 直接管理 -->
-            <div class="block-content">
-              <!-- 标题1 -->
-              <template v-if="b.type === 'h1'">
-                <h1
-                  class="editable h1"
-                  contenteditable="true"
-                  @input="handleInput(i, $event)"
-                  @keydown="handleKeydown(i, $event)"
-                  @focus="handleFocus(i)"
-                  @blur="handleBlur(i)"
-                ></h1>
-              </template>
-
-              <!-- 标题2 -->
-              <template v-else-if="b.type === 'h2'">
-                <h2
-                  class="editable h2"
-                  contenteditable="true"
-                  @input="handleInput(i, $event)"
-                  @keydown="handleKeydown(i, $event)"
-                  @focus="handleFocus(i)"
-                  @blur="handleBlur(i)"
-                ></h2>
-              </template>
-
-              <!-- 清单 -->
-              <template v-else-if="b.type === 'list'">
-                <div class="list-item">
-                  <span class="list-bullet">•</span>
-                  <div
-                    class="editable list-text"
-                    contenteditable="true"
-                    @input="handleInput(i, $event)"
-                    @keydown="handleKeydown(i, $event)"
-                    @focus="handleFocus(i)"
-                    @blur="handleBlur(i)"
-                  ></div>
-                </div>
-              </template>
-
-              <!-- 待办 -->
-              <template v-else-if="b.type === 'todo'">
-                <div class="todo-row">
-                  <input type="checkbox" class="todo-check" />
-                  <div
-                    class="editable todo-text"
-                    contenteditable="true"
-                    @input="handleInput(i, $event)"
-                    @keydown="handleKeydown(i, $event)"
-                    @focus="handleFocus(i)"
-                    @blur="handleBlur(i)"
-                  ></div>
-                </div>
-              </template>
-
-              <template v-else-if="b.type === 'image'">
-                <figure class="image-block"><img :src="b.text" :alt="b.attrsJson || '旅行图片'" /><figcaption contenteditable="true">点击图片说明</figcaption></figure>
-              </template>
-
-              <!-- 正文 -->
-              <template v-else>
-                <p
-                  class="editable p"
-                  contenteditable="true"
-                  @input="handleInput(i, $event)"
-                  @keydown="handleKeydown(i, $event)"
-                  @focus="handleFocus(i)"
-                  @blur="handleBlur(i)"
-                ></p>
-              </template>
-            </div>
-
+              v-else 
+              class="preview-content markdown-body"
+              v-html="renderedPreview"
+              @click="handlePreviewClick"
+            ></div>
+          </div>
+          
+          <!-- 分屏预览 -->
+          <div 
+            v-if="showPreview && isEditorMode"
+            class="editor-preview markdown-body"
+            @click="handlePreviewClick"
+          >
+            <div class="preview-label">预览</div>
+            <div class="preview-content scrollable" v-html="renderedPreview"></div>
           </div>
         </div>
       </div>
-      <p v-else class="placeholder-xl">选择或创建一篇笔记开始编辑</p>
-    </section>
-  </main>
+      
+      <p v-else class="empty-state">选择或创建一篇笔记开始编辑</p>
+    </main>
+
+    <!-- ===== 右侧拖拽手柄 ===== -->
+    <div 
+      v-if="showRightPanel" 
+      class="drag-handle right-handle" 
+      @mousedown="onRightHandleMouseDown"
+    ></div>
+
+    <!-- ===== 右侧信息面板 ===== -->
+    <aside 
+      v-if="showRightPanel"
+      class="right-panel"
+      :style="{ width: rightPanelWidth + 'px', background: theme.bg }"
+    >
+      <!-- 面板收起条 -->
+      <div class="right-toolbar">
+        <span class="right-toolbar-title">📄 面板</span>
+        <button 
+          class="panel-collapse-btn"
+          title="收起右侧面板 (Ctrl+B)"
+          @click="showRightPanel = false"
+        >▸</button>
+      </div>
+
+      <!-- 主题设置 -->
+      <div class="panel-section">
+        <div class="section-header" @click="selectionThemeVisible = !selectionThemeVisible">
+          <span>🎨 主题设置</span>
+          <span class="collapse-icon">{{ selectionThemeVisible ? '▼' : '▶' }}</span>
+        </div>
+        <div class="section-body" v-if="selectionThemeVisible">
+          <div class="theme-row">
+            <label>背景色</label>
+            <input type="color" v-model="theme.bg" />
+            <span class="hex">{{ theme.bg }}</span>
+          </div>
+          <div class="theme-row">
+            <label>文字色</label>
+            <input type="color" v-model="theme.fg" />
+            <span class="hex">{{ theme.fg }}</span>
+          </div>
+          <div class="theme-row">
+            <label>强调色</label>
+            <input type="color" v-model="theme.accent" />
+            <span class="hex">{{ theme.accent }}</span>
+          </div>
+          <div class="theme-presets">
+            <button 
+              v-for="p in themePresets" 
+              :key="p.name"
+              class="preset-btn"
+              :style="{ background: p.bg, color: p.fg, borderColor: p.accent }"
+              @click="Object.assign(theme, p)"
+            >{{ p.name }}</button>
+          </div>
+          <button 
+            class="theme-save-btn"
+            :style="{ background: theme.accent }"
+            @click="saveDoc"
+          >💾 保存主题</button>
+        </div>
+      </div>
+
+      <!-- 大纲 -->
+      <div class="panel-section" v-if="outline.length > 0">
+        <div class="section-header" @click="outlineVisible = !outlineVisible">
+          <span>📑 大纲目录</span>
+          <span class="collapse-icon">{{ outlineVisible ? '▼' : '▶' }}</span>
+        </div>
+        <div class="section-body outline" v-if="outlineVisible">
+          <div 
+            v-for="(item, idx) in outline" 
+            :key="idx"
+            class="outline-item"
+            :style="{ paddingLeft: (item.level - 1) * 12 + 12 + 'px' }"
+            @click="scrollToHeading(item.line)"
+          >
+            {{ item.text }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 文档信息 -->
+      <div class="panel-section" v-if="curDoc.id">
+        <div class="section-header" @click="infoVisible = !infoVisible">
+          <span>📄 文档信息</span>
+          <span class="collapse-icon">{{ infoVisible ? '▼' : '▶' }}</span>
+        </div>
+        <div class="section-body info" v-if="infoVisible">
+          <div class="info-row">
+            <span>字数</span>
+            <b>{{ wordCount }}</b>
+          </div>
+          <div class="info-row">
+            <span>最后编辑</span>
+            <b>{{ displayTime }}</b>
+          </div>
+          <div class="info-row">
+            <span>状态</span>
+            <b>草稿</b>
+          </div>
+          <button class="danger-btn" @click="removeDoc">🗑 删除笔记</button>
+        </div>
+      </div>
+
+      <!-- 快捷键提示 -->
+      <div class="panel-section">
+        <div class="section-header" @click="shortcutsVisible = !shortcutsVisible">
+          <span>⌨️ 快捷键</span>
+          <span class="collapse-icon">{{ shortcutsVisible ? '▼' : '▶' }}</span>
+        </div>
+        <div class="section-body shortcuts" v-if="shortcutsVisible">
+          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</div>
+          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>E</kbd> 切换预览</div>
+          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>B</kbd> 显示/隐藏右侧</div>
+          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>A</kbd> 全选</div>
+
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右栏收起后的展开按钮 -->
+    <button
+      v-if="!showRightPanel"
+      class="right-restore-btn"
+      title="展开右侧面板 (Ctrl+B)"
+      @click="showRightPanel = true"
+    >◂</button>
+  </div>
 </template>
 
 <style scoped lang="scss">
-.notes-page {
+.notes-app {
+  position: relative;
   display: flex;
   height: 100vh;
-  min-height: 0;
-  background: #fff;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--notes-bg, #ffffff);
+  color: var(--notes-fg, #1f2329);
 }
 
-/* 左列表 */
-.list-pane {
-  width: 270px;
+/* ─── 左侧面板 ─────────────────────────────────── */
+.left-panel {
   flex-shrink: 0;
-  border-right: 1px solid #e8e4de;
   display: flex;
   flex-direction: column;
-  background: #faf8f4;
-}
-.list-head {
-  padding: 22px 18px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.eyebrow {
-  color: #f27a4f;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .16em;
-}
-.new-btn {
-  border: 0;
-  background: #1d4d40;
-  color: #fff;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background .15s;
-}
-.new-btn:hover { background: #163d33; }
-.note-ul {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.note-item {
-  text-align: left;
-  background: #fff;
-  border: 1px solid transparent;
-  padding: 11px 13px;
-  border-radius: 10px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  transition: all .15s;
-}
-.note-item:hover { border-color: #e8e4de; }
-.note-item.active {
-  background: #fff;
-  border-color: #f27a4f;
-  box-shadow: 0 2px 8px rgba(0,0,0,.05);
-}
-.note-item b { font-size: 13px; color: #2f3a35; }
-.note-item small { font-size: 11px; color: #999; }
-.empty-list { color: #aaa; font-size: 13px; padding: 20px 4px; }
-.list-foot {
-  padding: 12px 18px;
-  border-top: 1px solid #e8e4de;
-  color: #aaa;
-  font-size: 11px;
-}
-
-/* 右编辑器 */
-.editor-pane {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+  border-right: 1px solid #e5e6e8;
   overflow: hidden;
 }
 
-/* 顶部工具栏 */
-.tb {
+/* 收起/展开按钮 */
+.panel-collapse-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d8dade;
+  border-radius: 6px;
+  background: #fff;
+  color: #646a73;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+
+  &:hover {
+    color: #245bdb;
+    border-color: #9bb8ff;
+    background: #f4f7ff;
+  }
+}
+
+/* 左侧面板工具条（与右侧 right-toolbar 一致） */
+.left-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 34px;
-  border-bottom: 1px solid #e8e4de;
-  background: #fff;
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e5e6e8;
+  background: rgba(0, 0, 0, 0.02);
+  flex-shrink: 0;
+
+  .left-toolbar-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #8f959e;
+  }
+
+  .panel-collapse-btn { width: 26px; height: 26px; }
 }
-.tb-title {
-  font-weight: 700;
-  color: #2f3a35;
-  max-width: 50%;
+
+/* 工作台标识条 */
+.workspace-mini {
+  padding: 10px 14px;
+  border-bottom: 1px solid #e5e6e8;
+  flex-shrink: 0;
+}
+
+.workspace-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tb-actions { display: flex; gap: 10px; }
-.ghost {
-  border: 1px solid #e8e4de;
-  background: #fff;
-  padding: 8px 14px;
-  border-radius: 9px;
-  cursor: pointer;
-  font-weight: 600;
-  color: #2f3a35;
-  transition: all .15s;
-}
-.ghost:hover { background: #f5f5f5; }
-.primary {
-  border: 0;
-  background: #1d4d40;
+
+.workspace-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   color: #fff;
-  padding: 9px 18px;
-  border-radius: 9px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background .15s;
-}
-.primary:hover:not(:disabled) { background: #163d33; }
-.primary:disabled { opacity: .6; cursor: not-allowed; }
-
-/* 编辑器滚动区域 - 关键：允许水平溢出显示工具条 */
-.editor-scroll {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: visible;
-  padding: 40px 160px 120px 160px;
-}
-.doc {
-  width: 100%;
-  max-width: 820px;
-  margin: 0 auto;
-}
-.doc-title {
-  width: 100%;
-  border: 0;
-  outline: none;
-  font: 40px 'DM Serif Display', 'Noto Sans SC', serif;
-  color: #2f3a35;
-  border-bottom: 1px solid transparent;
-  padding: 6px 0 16px;
-  margin-bottom: 16px;
-  background: transparent;
-}
-.doc-title:focus { border-bottom-color: #e8e4de; }
-
-/* 块包装器 */
-.block-wrapper {
-  position: relative;
-  margin-bottom: 4px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-/* 左侧工具条 - 悬停或聚焦时显示 */
-.block-tools {
-  position: absolute;
-  left: -130px;
-  top: 4px;
-  display: flex;
-  gap: 2px;
-  opacity: 0;
-  transform: translateX(-8px);
-  transition: opacity .15s ease, transform .15s ease;
-  background: #fff;
-  border: 1px solid #e8e4de;
-  border-radius: 8px;
-  padding: 4px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.08);
-  z-index: 10;
-  pointer-events: none;
-}
-.block-tools.visible {
-  opacity: 1;
-  transform: translateX(0);
-  pointer-events: auto;
-}
-.tool-btn {
-  border: 0;
-  background: transparent;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 7px;
-  border-radius: 5px;
-  cursor: pointer;
-  color: #666;
-  white-space: nowrap;
-  transition: all .12s;
-}
-.tool-btn:hover {
-  background: #f0f0ee;
-  color: #2f3a35;
-}
-.tool-btn.arrow { color: #999; }
-.tool-btn.danger:hover { background: #fee; color: #c33; }
-.tool-divider {
-  width: 1px;
-  height: 14px;
-  background: #e8e4de;
-  margin: 0 2px;
-  align-self: center;
-}
-
-/* 块内容区 */
-.block-content {
-  flex: 1;
-  min-width: 0;
-}
-
-/* 添加块按钮 */
-.add-block-btn {
-  position: absolute;
-  right: -28px;
-  top: 6px;
-  border: 0;
-  background: transparent;
-  color: #ccc;
-  cursor: pointer;
-  padding: 4px;
-  opacity: 0;
-  transition: all .15s;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-}
-.add-block-btn.visible { opacity: 1; }
-.add-block-btn:hover { color: #1d4d40; background: #f0f0ee; }
-
-/* 可编辑区域基础样式 */
-.editable {
-  outline: none;
-  min-height: 1.6em;
-}
-
-/* 标题样式 */
-.h1 {
-  font: 34px 'DM Serif Display', 'Noto Sans SC', serif;
-  color: #2f3a35;
   font-weight: 800;
-  margin: 22px 0 6px;
-  line-height: 1.3;
-}
-.h2 {
-  font: 24px 'DM Serif Display', 'Noto Sans SC', serif;
-  color: #2f3a35;
-  font-weight: 700;
-  margin: 18px 0 4px;
-  line-height: 1.4;
-}
-
-/* 正文样式 */
-.p {
-  font-size: 15px;
-  line-height: 1.8;
-  color: #2f3a35;
-  margin: 2px 0;
-  min-height: 1.6em;
-}
-
-/* 清单样式 */
-.list-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 2px 0;
-}
-.list-bullet {
-  color: #f27a4f;
-  font-weight: 800;
-  font-size: 18px;
-  line-height: 1.6;
+  font-size: 12px;
   flex-shrink: 0;
 }
-.list-text {
-  font-size: 15px;
-  line-height: 1.8;
-  color: #2f3a35;
-  flex: 1;
-  min-height: 1.6em;
-}
 
-/* 待办样式 */
-.todo-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 2px 0;
-  font-size: 15px;
-  color: #2f3a35;
-}
-.todo-check {
-  margin-top: 5px;
-  width: 16px;
-  height: 16px;
+/* 左栏收起后的展开按钮 */
+.left-restore-btn {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 64px;
+  border: 1px solid #e5e6e8;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--card, #fffdf8);
+  color: #646a73;
+  font-size: 14px;
   cursor: pointer;
-  accent-color: #1d4d40;
-}
-.todo-text {
-  line-height: 1.8;
-  flex: 1;
-  min-height: 1.6em;
+  z-index: 50;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.06);
+  transition: all .15s;
+
+  &:hover {
+    color: #245bdb;
+    background: #f4f7ff;
+    border-color: #9bb8ff;
+  }
 }
 
-/* 空状态 */
-.placeholder-xl {
-  color: #bbb;
+/* 右侧面板收起工具条 */
+.right-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e5e6e8;
+  background: rgba(0, 0, 0, 0.02);
+  flex-shrink: 0;
+
+  .right-toolbar-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #8f959e;
+  }
+
+  .panel-collapse-btn { width: 26px; height: 26px; }
+}
+
+/* 右栏收起后的展开按钮 */
+.right-restore-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 64px;
+  border: 1px solid #e5e6e8;
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  background: var(--card, #fffdf8);
+  color: #646a73;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.06);
+  transition: all .15s;
+
+  &:hover {
+    color: #245bdb;
+    background: #f4f7ff;
+    border-color: #9bb8ff;
+  }
+}
+
+.panel-toolbar {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid #e5e6e8;
+}
+
+.toolbar-btn {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d8dade;
+  border-radius: 6px;
+  background: #fff;
+  color: #646a73;
+  font-size: 13px;
+  cursor: pointer;
   text-align: center;
-  padding-top: 80px;
+  transition: all .15s;
+
+  &:hover {
+    border-color: #9bb8ff;
+    color: #245bdb;
+    background: #f4f7ff;
+  }
+}
+
+.new-note-btn {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity .15s;
+
+  &:hover { opacity: .9; }
+}
+
+.notes-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.note-item {
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background .15s;
+
+  &:hover { background: #f0f1f2; }
+
+  .note-title {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .note-time {
+    font-size: 12px;
+    color: #8f959e;
+  }
+}
+
+.empty-hint {
+  text-align: center;
+  color: #aaa;
+  font-size: 13px;
+  padding: 40px 16px;
+}
+
+.panel-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #e5e6e8;
+  font-size: 12px;
+  color: #8f959e;
+}
+
+/* ─── 拖拽手柄（修复版） ─────────────────────────────────── */
+.drag-handle {
+  width: 12px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+  user-select: none;
+  touch-action: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -6px;
+    right: -6px;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 60px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background .15s;
+  }
+
+  &:hover::after { background: #c5c7ca; }
+  &:hover { background: rgba(0,0,0,0.02); }
+  &:active { background: rgba(51, 112, 255, 0.05); }
+  &:active::after { background: #3370ff; }
+}
+
+/* ─── 中间编辑区 ─────────────────────────────────── */
+.center-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--notes-bg, #fff);
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid #e5e6e8;
+  gap: 16px;
+  flex-shrink: 0;
+  background: var(--notes-bg, #fff);
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #8f959e;
+
+  i { font-style: normal; color: #c5c7ca; }
+  b { font-weight: 500; color: inherit; }
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-input {
+  border: 0;
+  outline: none;
+  font-size: 16px;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  min-width: 200px;
+
+  &:focus { background: #f5f6f7; }
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-btn {
+  padding: 6px 10px;
+  border: 1px solid #d8dade;
+  border-radius: 6px;
+  background: #fff;
+  color: #646a73;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .15s;
+
+  &.active, &:hover {
+    color: #245bdb;
+    border-color: #9bb8ff;
+    background: #f4f7ff;
+  }
+}
+
+.save-indicator {
+  font-size: 12px;
+  color: #8f959e;
+
+  &.saving { color: #f0a020; }
+}
+
+.save-btn {
+  padding: 7px 16px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity .15s;
+
+  &:hover { opacity: .9; }
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+
+.editor-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.editor-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  &.half { flex: 0.5; }
+}
+
+.md-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 48px 72px 120px;
+  border: 0;
+  outline: none;
+  resize: none;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
   font-size: 15px;
+  line-height: 1.8;
+  color: inherit;
+  background: transparent;
+  tab-size: 2;
+  overflow-y: auto;
+
+  &::placeholder {
+    color: #c5c7ca;
+    white-space: pre;
+  }
 }
 
-/* 滚动条美化 */
-.editor-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.editor-scroll::-webkit-scrollbar-thumb {
-  background: #ddd;
-  border-radius: 3px;
-}
-.editor-scroll::-webkit-scrollbar-thumb:hover {
-  background: #ccc;
+.editor-preview {
+  flex: 0.5;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #e5e6e8;
+  overflow: hidden;
+  background: var(--notes-bg, #fff);
+
+  .preview-label {
+    padding: 8px 16px;
+    font-size: 12px;
+    color: #8f959e;
+    border-bottom: 1px solid #e5e6e8;
+    background: #fafafa;
+  }
 }
 
-.note-ul::-webkit-scrollbar {
-  width: 4px;
-}
-.note-ul::-webkit-scrollbar-thumb {
-  background: #ddd;
-  border-radius: 2px;
+.preview-content {
+  flex: 1;
+  padding: 48px 72px 120px;
+  overflow-y: auto;
+  line-height: 1.8;
 }
 
-/* Feishu-inspired workspace chrome */
-.notes-page { background: #f5f6f7; color: #1f2329; }
-.list-pane { width: 264px; background: #f7f8fa; border-right-color: #e5e6e8; }
-.workspace-head { height: 62px; display:flex; align-items:center; gap:10px; padding:0 16px; border-bottom:1px solid #e5e6e8; color:#1f2329; }
-.workspace-head b { display:block; font-size:14px; font-weight:650; }.workspace-head small { display:block; color:#8f959e; font-size:11px; margin-top:3px; }.workspace-logo { width:30px; height:30px; border-radius:7px; display:grid; place-items:center; background:#3370ff; color:#fff; font-weight:800; }.workspace-more { margin-left:auto; color:#8f959e; }
-.list-head { padding:18px 14px 10px; gap:10px; }.quick-row { display:flex; align-items:center; justify-content:space-between; padding:0 4px; }.icon-btn { border:0; background:transparent; color:#646a73; font-size:20px; cursor:pointer; }.new-btn { border-radius:6px; background:#3370ff; padding:9px 12px; font-size:13px; }.new-btn:hover { background:#2864e5; }
-.side-nav { padding:0 10px 12px; border-bottom:1px solid #e5e6e8; }.side-nav-item { display:flex; gap:9px; align-items:center; padding:8px 10px; color:#646a73; font-size:13px; border-radius:5px; }.side-nav-item.active { background:#e8f0ff; color:#245bdb; font-weight:600; }
-.note-ul { padding:12px 10px; gap:2px; }.note-item { border:0; border-radius:6px; padding:10px 11px; background:transparent; }.note-item:hover { background:#eef0f2; border:0; }.note-item.active { background:#e8f0ff; border:0; box-shadow:none; }.note-item b { color:#1f2329; font-size:13px; font-weight:550; }.note-item small { color:#8f959e; }
-.list-foot { padding:12px 14px; border-top-color:#e5e6e8; display:flex; align-items:center; gap:8px; }.user-dot { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:#d8e5ff; color:#245bdb; font-size:11px; }.foot-more { margin-left:auto; }
-.editor-pane { background:#fff; }.tb { height:52px; box-sizing:border-box; padding:0 24px; border-bottom-color:#e5e6e8; }.breadcrumbs { display:flex; align-items:center; gap:10px; color:#8f959e; font-size:13px; }.breadcrumbs i { font-style:normal; color:#c5c7ca; }.breadcrumbs b { color:#1f2329; font-weight:550; }.tb-actions { align-items:center; }.save-state { color:#8f959e; font-size:12px; }.ghost,.share-btn,.primary { padding:7px 12px; border-radius:6px; font-size:13px; }.ghost { border:0; background:transparent; color:#646a73; }.ghost:hover { background:#f0f1f2; }.share-btn { border:1px solid #d8dade; background:#fff; color:#1f2329; }.primary { background:#3370ff; }.primary:hover:not(:disabled) { background:#2864e5; }
-.toolbar-btn { border:1px solid #d8dade; border-radius:6px; padding:6px 10px; color:#646a73; background:#fff; font-size:12px; cursor:pointer; }.toolbar-btn:hover,.toolbar-btn.selected { color:#245bdb; border-color:#9bb8ff; background:#f4f7ff; }
-.editor-scroll { padding:42px 120px 120px; background:#fff; }.doc { max-width:860px; }.doc-meta { display:flex; align-items:center; gap:10px; color:#8f959e; font-size:12px; margin-bottom:18px; }.doc-badge { padding:3px 8px; border-radius:4px; background:#e8f0ff; color:#245bdb; }.doc-title { font-family:'Noto Sans SC',sans-serif; font-size:36px; font-weight:700; color:#1f2329; padding-bottom:14px; margin-bottom:22px; }.h1 { font-family:'Noto Sans SC',sans-serif; color:#1f2329; font-size:27px; font-weight:700; }.h2 { font-family:'Noto Sans SC',sans-serif; color:#1f2329; font-size:20px; font-weight:650; }.p,.list-text,.todo-text { color:#4e5969; font-size:15px; line-height:1.85; }.block-wrapper { margin-bottom:6px; }.block-tools { left:-154px; border-color:#d8dade; box-shadow:0 4px 16px rgba(31,35,41,.12); }.tool-btn:hover { background:#e8f0ff; color:#245bdb; }.add-block-btn:hover { color:#3370ff; background:#e8f0ff; }
-.add-block-btn { display:none !important; }.image-block { margin:14px 0; }.image-block img { display:block; max-width:100%; max-height:460px; border-radius:8px; object-fit:contain; background:#f5f6f7; }.image-block figcaption { color:#8f959e; font-size:12px; margin-top:7px; outline:none; }
-.p,.list-text,.todo-text { color:#27313d; }
-.editable strong { color:#17202b; font-weight:750; }.editable em { font-style:italic; }.editable code { padding:2px 5px; border-radius:4px; background:#f0f2f4; color:#b42318; font-family:ui-monospace,monospace; font-size:.92em; }.editable a,.note-link { color:#245bdb; text-decoration:underline; cursor:pointer; }
-@media (max-width: 900px) { .list-pane { width:220px; }.editor-scroll { padding:32px 56px 90px; } .block-tools { left:-44px; top:-30px; } }
-@media (max-width: 640px) { .list-pane { width:68px; }.workspace-head { padding:0 18px; }.workspace-head>div:not(.workspace-logo),.workspace-more,.list-head .eyebrow,.new-btn,.side-nav-item span,.note-item b,.note-item small,.list-foot span:not(.user-dot) { display:none; }.list-head { align-items:center; }.note-ul { padding:10px 8px; }.note-item { min-height:38px; overflow:hidden; }.editor-scroll { padding:24px 22px 80px; }.tb { padding:0 14px; }.breadcrumbs span,.breadcrumbs i { display:none; }.save-state,.share-btn { display:none; }.doc-title { font-size:30px; } }
+.preview-content.scrollable { overflow-y: auto; }
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c5c7ca;
+  font-size: 14px;
+}
+
+/* ─── 右侧面板 ─────────────────────────────────── */
+.right-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #e5e6e8;
+  overflow-y: auto;
+  background: var(--notes-bg, #fafafa);
+}
+
+.panel-section {
+  border-bottom: 1px solid #e5e6e8;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: inherit;
+
+  &:hover { background: #f5f6f7; }
+}
+
+.collapse-icon { font-size: 10px; color: #8f959e; }
+
+.section-body {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 主题设置 */
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+
+  label {
+    width: 56px;
+    color: #646a73;
+  }
+
+  input[type="color"] {
+    width: 32px;
+    height: 28px;
+    border: 1px solid #d8dade;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 2px;
+  }
+
+  .hex {
+    font-family: monospace;
+    font-size: 12px;
+    color: #8f959e;
+  }
+}
+
+.theme-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-btn {
+  padding: 6px 12px;
+  border: 2px solid;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform .1s;
+
+  &:hover { transform: translateY(-2px); }
+}
+
+.theme-save-btn {
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity .15s;
+
+  &:hover { opacity: .9; }
+}
+
+/* 大纲 */
+.outline {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.outline-item {
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background .1s;
+
+  &:hover { background: #f5f6f7; }
+}
+
+/* 文档信息 */
+.info {
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 6px 0;
+
+    span { color: #646a73; }
+    b { color: inherit; font-weight: 500; }
+  }
+}
+
+.danger-btn {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+  background: #fff;
+  color: #c33;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all .15s;
+
+  &:hover { background: #fde8e8; }
+}
+
+/* 快捷键 */
+.shortcuts {
+  .shortcut-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #646a73;
+    padding: 2px 0;
+  }
+
+  kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    border: 1px solid #d8dade;
+    border-radius: 3px;
+    background: #f5f6f7;
+    font-family: monospace;
+    font-size: 11px;
+    color: #646a73;
+  }
+}
+
+/* ─── Markdown 预览样式（Cursor/GitHub 宽松排版） ────── */
+.markdown-body {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--notes-fg, #1f2329);
+  word-break: break-word;
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 650;
+    line-height: 1.35;
+    margin-top: 28px;
+    margin-bottom: 14px;
+  }
+
+  h1 {
+    font-size: 2em;
+    border-bottom: 1px solid #e5e6e8;
+    padding-bottom: 10px;
+    margin-top: 0.5em;
+  }
+
+  h2 {
+    font-size: 1.5em;
+    border-bottom: 1px solid #e5e6e8;
+    padding-bottom: 8px;
+  }
+
+  h3 { font-size: 1.25em; }
+  h4 { font-size: 1em; }
+  h5 { font-size: 0.9em; }
+  h6 { font-size: 0.85em; color: #646a73; }
+
+  p { margin: 16px 0; line-height: 1.75; }
+
+  ul, ol {
+    padding-left: 1.8em;
+    margin: 16px 0;
+
+    li {
+      margin: 8px 0;
+      line-height: 1.7;
+    }
+
+    ul, ol { margin: 8px 0; }
+  }
+
+  blockquote {
+    border-left: 4px solid var(--notes-accent, #3370ff);
+    padding: 4px 16px;
+    color: #646a73;
+    margin: 18px 0;
+    background: rgba(51, 112, 255, 0.04);
+    border-radius: 0 6px 6px 0;
+
+    p { margin: 12px 0; }
+  }
+
+  code {
+    padding: 3px 6px;
+    border-radius: 5px;
+    background: #f0f2f4;
+    color: #b42318;
+    font-family: 'SF Mono', ui-monospace, 'Menlo', monospace;
+    font-size: 0.88em;
+  }
+
+  pre {
+    padding: 18px 20px;
+    border-radius: 10px;
+    background: #1e1e2e;
+    color: #d4d4d8;
+    overflow-x: auto;
+    margin: 18px 0;
+    font-size: 14px;
+    line-height: 1.65;
+
+    code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font-size: inherit;
+    }
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid #e5e6e8;
+    margin: 32px 0;
+  }
+
+  /* 链接样式 - 指针光标 + hover 效果 */
+  a, .md-link {
+    color: var(--notes-accent, #3370ff);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color .15s, text-decoration .15s;
+
+    &:hover {
+      color: var(--notes-accent, #3370ff);
+      text-decoration: underline;
+    }
+
+    &:active {
+      opacity: 0.7;
+    }
+  }
+
+  img {
+    max-width: 100%;
+    border-radius: 10px;
+    margin: 12px 0;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 18px 0;
+
+    th, td {
+      border: 1px solid #e5e6e8;
+      padding: 10px 14px;
+      text-align: left;
+    }
+
+    th { background: #f5f6f7; font-weight: 600; }
+  }
+
+  input[type="checkbox"] {
+    margin-right: 6px;
+    cursor: pointer;
+  }
+}
+
+/* ─── 响应式 ─────────────────────────────────── */
+@media (max-width: 900px) {
+  .preview-content,
+  .md-textarea {
+    padding: 24px 20px;
+  }
+}
 </style>

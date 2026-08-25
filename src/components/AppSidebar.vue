@@ -2,16 +2,19 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useRightPanelStore } from '@/stores/rightPanel'
 import roamlySymbol from '@/assets/brand/logo-app-icon.png'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+const rightPanel = useRightPanelStore()
 
 interface NavItem {
   path: string
   label: string
   icon: string
+  description: string
 }
 
 // 线性图标（内联 SVG，描边跟随 currentColor）
@@ -25,22 +28,49 @@ const icons: Record<string, string> = {
 }
 
 const navMain: NavItem[] = [
-  { path: '/explore', label: '发现灵感', icon: 'compass' },
-  { path: '/', label: 'AI 旅行规划', icon: 'chat' },
-  { path: '/inspirations', label: '灵感目的地', icon: 'star' },
-  { path: '/notes', label: '旅行笔记', icon: 'note' },
-  { path: '/journeys', label: '我的旅程', icon: 'map' }
+  { path: '/explore', label: '发现灵感', icon: 'compass', description: '浏览全球旅行灵感，发现新目的地与热门路线。' },
+  { path: '/', label: 'AI 旅行规划', icon: 'chat', description: '与 AI 助手对话，智能规划个性化旅行行程。' },
+  { path: '/inspirations', label: '灵感目的地', icon: 'star', description: '收藏与管理你心仪的旅行目的地卡片。' },
+  { path: '/notes', label: '旅行笔记', icon: 'note', description: '类飞书的 Markdown 在线笔记编辑器，支持导入、预览与主题定制。' },
+  { path: '/journeys', label: '我的旅程', icon: 'map', description: '查看和管理你创建的旅行行程记录。' }
 ]
 
 const navMore: NavItem[] = [
-  { path: '/users/search', label: '寻找同好', icon: 'star' },
-  { path: '/journey-map', label: '足迹地图', icon: 'flag' },
-  { path: '/agent-panel', label: '互动式规划', icon: 'chat' }
+  { path: '/users/search', label: '寻找同好', icon: 'star', description: '搜索并发现与你品味相投的旅行同好。' },
+  { path: '/journey-map', label: '足迹地图', icon: 'flag', description: '在地图上查看你去过的地方，留下足迹标记。' },
+  { path: '/agent-panel', label: '互动式规划', icon: 'chat', description: '使用互动式智能体深度规划你的旅程。' }
 ]
 
 function isActive(item: NavItem) {
   if (item.path === '/') return route.path === '/'
   return route.path.startsWith(item.path)
+}
+
+// 侧边栏 tab -> 右侧面板视图 key 映射
+const viewKeyMap: Record<string, string> = {
+  '/explore': 'explore',
+  '/': 'chat',
+  '/inspirations': 'inspirations',
+  '/journeys': 'journeys',
+  '/users/search': 'search',
+  '/journey-map': 'map',
+  '/agent-panel': 'agent'
+}
+
+function navigate(item: NavItem) {
+  // 旅行笔记固定在中间主区域
+  if (item.path === '/notes') {
+    router.push('/notes')
+    rightPanel.close()
+    return
+  }
+  // 其他 tab：不在中间覆盖笔记，直接在右侧面板显示对应页面
+  const viewKey = viewKeyMap[item.path]
+  if (viewKey) {
+    rightPanel.openView(viewKey, item.label)
+  } else {
+    router.push(item.path)
+  }
 }
 
 const avatarStyle = computed(() => {
@@ -67,7 +97,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
         :key="item.path"
         class="menu-item"
         :class="{ active: isActive(item) }"
-        @click="router.push(item.path)"
+        @click="navigate(item)"
       >
         <span class="ico" v-html="icons[item.icon]"></span>
         <span class="label">{{ item.label }}</span>
@@ -81,7 +111,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
         :key="item.path"
         class="menu-item"
         :class="{ active: isActive(item) }"
-        @click="router.push(item.path)"
+        @click="navigate(item)"
       >
         <span class="ico" v-html="icons[item.icon]"></span>
         <span class="label">{{ item.label }}</span>
