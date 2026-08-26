@@ -123,49 +123,100 @@ function copyUrl(url: string) {
 .global-right-panel {
   position: relative;
   flex-shrink: 0;
-  height: 100vh;
-  background: var(--paper, #f7f3ea);
-  border-left: 1px solid var(--line, #e5e6e8);
+  height: calc(100vh - 16px);
+  margin: 8px 8px 8px 0;
+  border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: -4px 0 18px rgba(31,35,41,.10);
+  background: var(--notes-bg, #fafafa);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
   isolation: isolate;
+  box-sizing: border-box;
+
+  /* 左侧强调线（NotesView section-drag-handle::after 风格）*/
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -1px;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--notes-accent, #3370ff);
+    opacity: 0.5;
+    transition: width .2s, opacity .2s, box-shadow .2s;
+    pointer-events: none;
+  }
+
+  &:hover::before {
+    width: 36px;
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(51,112,255,.25);
+  }
 }
+
+
+
+
 
 .panel-drag-handle {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -4px;
-  width: 10px;
+  left: -7px;
+  width: 14px;
   cursor: col-resize;
   z-index: 100;
   background: transparent;
-  transition: background .15s;
+  pointer-events: auto;
+  user-select: none;
+  touch-action: none;
 
-  &:hover { background: rgba(51, 112, 255, 0.06); }
-  &:hover::after {
+  /* 热区：向上向下各扩展 8px，整条可拖拽 */
+  &::before {
     content: '';
     position: absolute;
-    left: 4px;
-    top: 50%;
-    transform: translateY(-50%);
+    top: -8px;
+    bottom: -8px;
+    left: 0;
+    right: 0;
+    background: transparent;
+  }
+
+  /* 分割线：整条垂直，NotesView 风格 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
     width: 2px;
-    height: 48px;
-    border-radius: 1px;
-    background: #c5c7ca;
+    background: #d5d8dc;
+    box-shadow: 1px 0 2px rgba(0,0,0,.04);
+    transition: background .15s, width .15s, box-shadow .15s;
+  }
+
+  &:hover::after {
+    width: 3px;
+    background: var(--notes-accent, #3370ff);
+    box-shadow: 0 0 6px rgba(51,112,255,.25);
   }
 }
 
 .panel-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e5e6e8;
-  background: var(--card, #fffdf8);
-  flex-shrink: 0;
+  padding: 4px 4px 12px;
+  background: var(--notes-bg, #fafafa);
+  border-bottom: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
+  margin-bottom: 4px;
   z-index: 10;
 }
 
@@ -176,6 +227,69 @@ function copyUrl(url: string) {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #1f2329;
+}
+
+/* 右侧面板滚动条 */
+.view-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.view-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.2);
+  border-radius: 3px;
+}
+
+.view-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 内部视图包装 */
+.view-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+
+  /* 重置内部页面组件的滚动行为，避免双滚动条 */
+  :deep(.page),
+  :deep([class$='-page']) {
+    overflow: visible !important;
+    overflow-y: visible !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    box-sizing: border-box;
+  }
+}
+
+.view-wrapper > * {
+  flex-shrink: 0;
+}
+
+/* 链接预览 */
+.link-panel-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 空状态 */
+.empty-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--ink-3, #8C9993);
+  padding: 24px;
 }
 
 .panel-actions {
@@ -203,12 +317,12 @@ function copyUrl(url: string) {
 }
 
 .panel-body {
-  flex: 1;
+  flex: 1 1 auto;
   overflow: hidden;
-  position: relative;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--paper, #f7f3ea);
+  background: transparent;
 }
 
 /* 嵌入页面容器：可滚动、占满、不强制白色。

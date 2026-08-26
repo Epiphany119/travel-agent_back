@@ -27,9 +27,6 @@ function search() {
     </div>
 
     <div class="actions">
-      <button class="new-btn" @click="router.push('/journeys')">
-        <span class="plus">＋</span> 新旅程
-      </button>
       <button class="icon-btn" title="通知">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -42,6 +39,9 @@ function search() {
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
       </button>
+      <button class="new-btn" @click="router.push('/journeys')">
+        <span class="plus">＋</span> 新旅程
+      </button>
     </div>
   </header>
 </template>
@@ -51,30 +51,37 @@ function search() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
   width: 100%;
-  margin: 0 auto;
-  height: 54px;
-  padding: 8px 18px;
-  border-bottom: 1px solid var(--line);
-  background: var(--paper);
+  height: 52px;
+  padding: 6px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  background: transparent;
+  flex-shrink: 0;
 }
 
-/* 搜索胶囊（模板中的深绿圆角搜索条） */
+/* 搜索框：透明、无胶囊背景，仅底部一条细线 */
 .search {
   flex: 1;
-  max-width: 480px;
+  max-width: 320px;
   display: flex;
   align-items: center;
-  gap: 11px;
-  background: var(--forest);
-  border-radius: 8px;
-  padding: 8px 12px;
+  gap: 9px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.35);
+  padding: 6px 2px;
+  transition: border-color .15s;
+
+  &:hover,
+  &:focus-within {
+    border-bottom-color: rgba(255,255,255,0.8);
+  }
 
   svg {
-    width: 16px;
-    height: 16px;
-    color: #9db8ad;
+    width: 15px;
+    height: 15px;
+    color: rgba(255,255,255,0.7);
     flex-shrink: 0;
   }
 
@@ -83,17 +90,18 @@ function search() {
     border: 0;
     background: transparent;
     outline: 0;
-    color: var(--card);
+    color: #fff;
     font: 600 13px Manrope, "Noto Sans SC", sans-serif;
 
-    &::placeholder { color: #8fa89e; }
+    &::placeholder { color: rgba(255,255,255,0.5); }
   }
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .new-btn {
@@ -101,19 +109,19 @@ function search() {
   align-items: center;
   gap: 7px;
   border: 0;
-  background: var(--forest);
-  color: #fff;
+  background: #fff;
+  color: var(--forest);
   font-weight: 800;
   font-size: 13px;
-  padding: 11px 22px;
+  padding: 9px 18px;
   border-radius: 8px;
   cursor: pointer;
-  box-shadow: 0 8px 18px rgba(45, 106, 79, 0.28);
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s, box-shadow 0.15s;
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 12px 24px rgba(45, 106, 79, 0.34);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
   }
 
   .plus { font-size: 15px; line-height: 1; }
@@ -121,20 +129,20 @@ function search() {
 
 .icon-btn {
   position: relative;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--forest);
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 0;
+  background: rgba(255,255,255,0.15);
+  color: #fff;
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.15s;
 
-  svg { width: 18px; height: 18px; }
+  svg { width: 17px; height: 17px; }
 
-  &:hover { background: var(--paper); }
+  &:hover { background: rgba(255,255,255,0.25); }
 }
 
 .badge-dot {

@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
-import { listNotes, getNote, createNote, updateNote, deleteNote,
+import { listNotes, getNote, createNote, updateNote, deleteNote, uploadNoteImage,
           getNoteUserId, type NoteDocument } from '@/api/note'
+import panelBtnLeft from '@/assets/侧边栏按钮-左.png'
+import panelBtnRight from '@/assets/侧边栏按钮-右.png'
 import { useRightPanelStore } from '@/stores/rightPanel'
 import { getPreferences } from '@/api/user'
 
@@ -25,13 +27,29 @@ function escapeHtml(value: string): string {
 
 // Lightweight highlighting for the languages most commonly used in travel notes.
 // Markdown remains valid even when a language is unknown.
+//
+// 安全约束：
+// 1) 超长代码块跳过语法着色（只转义），防止正则/浏览器渲染卡死；
+// 2) 三次替换都作用在纯文本上，已高亮片段用占位符暂存，
+//    之后的正则永远不会命中已生成的 <span> 标签，杜绝嵌套膨胀。
 function highlightCode(code: string, lang: string): string {
   const source = escapeHtml(code)
   if (!/^(java|javascript|typescript|js|ts|json|css|html|xml|sql|bash|sh|python|py)?$/i.test(lang || '')) return source
+  // 超长代码块不做高亮（只转义显示），避免产生巨量 span 卡死界面
+  if (source.length > 8000) return source
+
+  const markers: string[] = []
+  const stash = (raw: string, cls: string): string => {
+    markers.push('<span class="' + cls + '">' + raw + '</span>')
+    return '\u0000' + String(markers.length - 1) + '\u0000'
+  }
   let highlighted = source
-    .replace(/(\/\/[^\n]*|#[^\n]*)/g, '<span class="code-comment">$1</span>')
-    .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="code-string">$1</span>')
-    .replace(/\b(abstract|boolean|break|case|catch|class|const|continue|def|else|extends|final|for|from|function|if|implements|import|in|interface|let|new|null|package|private|protected|public|return|static|this|throw|try|var|void|while|async|await|true|false)\b/g, '<span class="code-keyword">$1</span>')
+    .replace(/\u0000/g, '') // 丢弃内容中极罕见的空字符，防止占位冲突
+    .replace(/(\/\/[^\n]*|#[^\n]*)/g, (m: string) => stash(m, 'code-comment'))
+    .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, (m: string) => stash(m, 'code-string'))
+    .replace(/\b(abstract|boolean|break|case|catch|class|const|continue|def|else|extends|final|for|from|function|if|implements|import|in|interface|let|new|null|package|private|protected|public|return|static|this|throw|try|var|void|while|async|await|true|false)\b/g, (m: string) => stash(m, 'code-keyword'))
+  // 还原占位符为真实 span（这些标签是程序生成的，不再参与正则匹配）
+  highlighted = highlighted.replace(/\u0000(\d+)\u0000/g, (_, i: string) => markers[Number(i)] ?? '')
   return highlighted
 }
 
@@ -44,6 +62,12 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
 
 function renderMarkdown(source: string): string {
   if (!source) return ''
+  // 安全防线：内容异常巨大时跳过完整渲染，避免 markdown-it / DOMPurify /
+  // 浏览器对超大输入卡死（正常笔记远低于该值，长文可正常渲染）。
+  if (source.length > 300000) {
+    return '<div class="md-oversize" style="padding:16px;color:#8a9792;font-size:13px">' +
+      '内容过长（' + source.length + ' 字符），已暂停实时渲染以保护编辑器性能；保存后仍完整保留。</div>'
+  }
   try {
     const raw = md.render(source)
     // 为代码块提取语言，标注到 <pre> 上（用于显示语言角标 + 代码框）
@@ -51,9 +75,28 @@ function renderMarkdown(source: string): string {
       /<pre><code[^>]*class="language-([\w+-]+)"[^>]*>/g,
       (m: string, lang: string) => `<pre data-lang="${lang}"><code class="language-${lang}">`
     )
+    // 图片：解析 title="w=NNN" 持久化尺寸 → width 属性，并包上缩放手柄（编辑模式下可拖动缩放）
+    html = html.replace(
+      /<img([^>]*?)\stitle="w=(\d+)"([^>]*)>/g,
+      (m: string, pre: string, w: string, post: string) => `<img${pre} width="${w}"${post}>`
+    )
+    html = html.replace(
+      /<p><img([^>]*)><\/p>/g,
+      '<p class="img-line"><img$1 draggable="true"><i class="img-grip" title="拖动缩放"></i></p>'
+    )
+    // 兜底：未包裹的独立图片（表格/列表内等），跳过已带 draggable 的
+    html = html.replace(
+      /<img((?:(?!draggable="true")[^>])*)>/g,
+      (m: string, attrs: string) => {
+        if (/class="img-grip"/.test(m) || /draggable="true"/.test(m)) return m
+        return `<span class="img-line"><img${attrs} draggable="true"><i class="img-grip" title="拖动缩放"></i></span>`
+      }
+    )
+    // 兜底：清掉残留的尺寸 title，避免鼠标悬停在图片上时出现 "w=NNN" 提示
+    html = html.replace(/\stitle="w=\d+"/g, '')
     return DOMPurify.sanitize(html, {
       ADD_TAGS: ['img', 'hr', 'input', 'figure', 'figcaption'],
-      ADD_ATTR: ['contenteditable', 'draggable', 'data-note-id', 'data-link']
+      ADD_ATTR: ['contenteditable', 'draggable', 'data-note-id', 'data-link', 'width', 'title']
     })
   } catch {
     return source
@@ -180,46 +223,6 @@ function formatTime(dateStr?: string): string {
 const displayTime = computed(() => formatTime(curDoc.updatedAt))
 const renderedPreview = computed(() => renderMarkdown(editorContent.value))
 
-function syncLiveEditor() {
-  const el = liveEditorRef.value
-  if (!el) return
-  editorContent.value = htmlToMarkdown(el)
-}
-
-function htmlToMarkdown(root: HTMLElement): string {
-  const walk = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent || ""
-    if (!(node instanceof HTMLElement)) return Array.from(node.childNodes).map(walk).join("")
-    const inner = Array.from(node.childNodes).map(walk).join("")
-    const tag = node.tagName.toLowerCase()
-    if (/^h[1-6]$/.test(tag)) return "#".repeat(Number(tag[1])) + " " + inner.trim() + "\n\n"
-    if (tag === "p") return inner.trim() + "\n\n"
-    if (tag === "br") return "\n"
-    // contenteditable browsers represent Enter-separated lines as div blocks.
-    // A single newline keeps normal lines tightly spaced in Markdown; adding
-    // a blank line would turn every line into a separate paragraph.
-    if (tag === "div") return "\n" + inner
-    if (tag === "strong" || tag === "b") return "**" + inner + "**"
-    if (tag === "em" || tag === "i") return "*" + inner + "*"
-    if (tag === "code" && node.parentElement?.tagName.toLowerCase() !== "pre") return "`" + inner + "`"
-    if (tag === "pre") return "\n\n```\n" + node.innerText.trim() + "\n```\n\n"
-    if (tag === "img") return "![" + (node.getAttribute("alt") || "") + "](" + (node.getAttribute("src") || "") + ")"
-    if (tag === "table") {
-      const rows = Array.from(node.querySelectorAll("tr")).map(row => Array.from(row.children).map(cell => String(cell.textContent || "").trim()))
-      if (!rows.length) return ""
-      const head = "| " + rows[0].join(" | ") + " |"
-      const divider = "| " + rows[0].map(() => "---").join(" | ") + " |"
-      const body = rows.slice(1).map(row => "| " + row.join(" | ") + " |").join("\n")
-      return head + "\n" + divider + (body ? "\n" + body : "") + "\n\n"
-    }
-    if (tag === "li") return "- " + inner.trim() + "\n"
-    if (tag === "ul" || tag === "ol") return inner + "\n"
-    if (tag === "blockquote") return inner.split("\n").filter(Boolean).map(line => "> " + line).join("\n") + "\n\n"
-    return inner
-  }
-  return walk(root).replace(/\n{3,}/g, "\n\n").trim()
-}
-
 // ─── 列表加载 ────────────────────────────────────────────
 async function load() {
   loading.value = true
@@ -231,7 +234,7 @@ async function load() {
   } catch (e) { console.error(e) } finally { loading.value = false }
 }
 
-onMounted(() => { 
+onMounted(() => {
   load()
   loadSystemTheme()
   applyTheme()
@@ -255,15 +258,15 @@ async function openDoc(id: number) {
     curDoc.updatedAt = d.updatedAt || ''
     curDoc.themeJson = d.themeJson || ''
     curDoc.content = d.content || ''
-    
+
     editorContent.value = d.content || ''
-    
+
     if (d.themeJson) loadThemeFromJson(d.themeJson)
   } catch (e: any) { ElMessage.error(e?.message || '打开失败') }
 }
 
 // ─── 保存笔记 ────────────────────────────────────────────
-async function saveDoc() {
+async function saveDoc(silent = false) {
   syncLiveEditor()
   if (currentId.value == null) { await addDoc(); return }
   saving.value = true
@@ -277,7 +280,7 @@ async function saveDoc() {
       themeJson: themeToJson()
     }
     const d = await updateNote(currentId.value, payload as NoteDocument)
-    ElMessage.success('已保存')
+    if (!silent) ElMessage.success('已保存')
     curDoc.updatedAt = d.updatedAt || new Date().toISOString().replace('Z', '')
     curDoc.content = editorContent.value
     curDoc.themeJson = d.themeJson || themeToJson()
@@ -328,13 +331,13 @@ function handlePreviewClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   const linkEl = target.closest('a') as HTMLAnchorElement | null
   if (!linkEl) return
-  
+
   const url = linkEl.getAttribute('href') || linkEl.getAttribute('data-href') || ''
   if (!url) return
-  
+
   e.preventDefault()
   e.stopPropagation()
-  
+
   if (url.startsWith('mailto:')) {
     window.open(url, '_blank')
     return
@@ -343,20 +346,280 @@ function handlePreviewClick(e: MouseEvent) {
     window.open(url, '_blank')
     return
   }
-  
+
   const title = linkEl.textContent?.trim() || url
   // 在全局右侧面板打开链接预览
   rightPanel.openLink({ url, title, })
 }
 
-// ─── Markdown 导入 ──────────────────────────────────────
+function syncLiveEditor() {
+  const el = liveEditorRef.value
+  if (!el) return
+  editorContent.value = htmlToMarkdown(el)
+}
+
+function htmlToMarkdown(root: HTMLElement): string {
+  const MAX_DEPTH = 80
+  const walk = (node: Node, depth = 0): string => {
+    if (depth > MAX_DEPTH) return ''
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent || ""
+    if (!(node instanceof HTMLElement)) return Array.from(node.childNodes).map(c => walk(c, depth + 1)).join("")
+    // 缩放手柄是渲染辅助元素：不产出任何 markdown（否则会变成斜体 * 标记）
+    if (node.classList && node.classList.contains('img-grip')) return ""
+    const inner = Array.from(node.childNodes).map(c => walk(c, depth + 1)).join("")
+    const tag = node.tagName.toLowerCase()
+    let md = ''
+    if (/^h[1-6]$/.test(tag)) md = '#'.repeat(Number(tag[1])) + ' ' + inner.trim() + '\n\n'
+    else if (tag === 'p') md = inner.trim() + '\n\n'
+    else if (tag === 'br') md = '\n'
+    else if (tag === 'hr') md = '\n\n---\n\n'
+    else if (tag === 'div') md = '\n' + inner
+    else if (tag === 'strong' || tag === 'b') md = '**' + inner + '**'
+    else if (tag === 'em' || tag === 'i') md = '*' + inner + '*'
+    else if (tag === 'code' && node.parentElement?.tagName.toLowerCase() !== 'pre') md = '`' + inner + '`'
+    else if (tag === 'pre') md = '\n\n```\n' + node.innerText.trim() + '\n```\n\n'
+    else if (tag === 'img') {
+      const imgEl = node as HTMLImageElement
+      const alt = imgEl.getAttribute('alt') || ''
+      const src = imgEl.getAttribute('src') || ''
+      const styleW = imgEl.style?.width || ''
+      const attrW = imgEl.getAttribute('width') || ''
+      const num = /^(\d+)(px)?$/
+      const w = num.test(styleW) ? parseInt(styleW) : (num.test(attrW) ? parseInt(attrW) : 0)
+      const titles: string[] = []
+      const oldT = imgEl.getAttribute('title')
+      if (oldT && !/^w=\d+$/.test(oldT)) titles.push(oldT)
+      if (w > 0) titles.push('w=' + w)
+      md = '![' + alt + '](' + src + (titles.length ? ' "' + titles.join(' ') + '"' : '') + ')'
+    }
+    else if (tag === 'table') {
+      const rows = Array.from(node.querySelectorAll('tr')).map(r => Array.from(r.children).map(c => String(c.textContent || '').trim()))
+      if (rows.length) {
+        const head = '| ' + rows[0].join(' | ') + ' |'
+        const div = '| ' + rows[0].map(() => '---').join(' | ') + ' |'
+        const body = rows.slice(1).map(r => '| ' + r.join(' | ') + ' |').join('\n')
+        md = head + '\n' + div + (body ? '\n' + body : '') + '\n\n'
+      }
+    }
+    else if (tag === 'li') md = '- ' + inner.trim() + '\n'
+    else if (tag === 'ul' || tag === 'ol') md = inner + '\n'
+    else if (tag === 'blockquote') md = inner.split('\n').filter(Boolean).map(l => '> ' + l).join('\n') + '\n\n'
+    else md = inner
+    return md
+  }
+  return walk(root).replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/** 同步编辑器 → Markdown，并返回光标对应的 Markdown 偏移 */
+function syncWithCursor(): { md: string; pos: number } {
+  const el = liveEditorRef.value
+  const fallback = { md: editorContent.value, pos: editorContent.value.length }
+  if (!el) return fallback
+  const sel = window.getSelection()
+  const anchor = (sel && sel.rangeCount > 0 ? sel.anchorNode : null) as Node | null
+  const anchorOffset = sel && sel.rangeCount > 0 ? sel.anchorOffset : 0
+  let pos = -1
+  let acc = 0
+
+  const walk = (node: Node, depth = 0): string => {
+    if (depth > 80) return ''
+    // 命中光标落点
+    if (pos < 0) {
+      if (node === anchor && node.nodeType === Node.TEXT_NODE) {
+        pos = acc + Math.min(anchorOffset, (node.textContent || '').length)
+      } else if (node === anchor) {
+        pos = acc
+      }
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = node.textContent || ''
+      acc += t.length
+      return t
+    }
+    if (!(node instanceof HTMLElement)) {
+      const s = Array.from(node.childNodes).map(c => walk(c, depth + 1)).join('')
+      return s
+    }
+    if (node.classList?.contains('img-grip')) return ''
+    const inner = Array.from(node.childNodes).map(c => walk(c, depth + 1)).join('')
+    const tag = node.tagName.toLowerCase()
+    let md = ''
+    if (/^h[1-6]$/.test(tag)) md = '#'.repeat(Number(tag[1])) + ' ' + inner.trim() + '\n\n'
+    else if (tag === 'p') md = inner.trim() + '\n\n'
+    else if (tag === 'br') md = '\n'
+    else if (tag === 'hr') md = '\n\n---\n\n'
+    else if (tag === 'div') md = '\n' + inner
+    else if (tag === 'strong' || tag === 'b') md = '**' + inner + '**'
+    else if (tag === 'em' || tag === 'i') md = '*' + inner + '*'
+    else if (tag === 'code' && node.parentElement?.tagName.toLowerCase() !== 'pre') md = '`' + inner + '`'
+    else if (tag === 'pre') md = '\n\n```\n' + node.innerText.trim() + '\n```\n\n'
+    else if (tag === 'img') {
+      const imgEl = node as HTMLImageElement
+      const alt = imgEl.getAttribute('alt') || ''
+      const src = imgEl.getAttribute('src') || ''
+      const styleW = imgEl.style?.width || ''
+      const attrW = imgEl.getAttribute('width') || ''
+      const num = /^(\d+)(px)?$/
+      const w = num.test(styleW) ? parseInt(styleW) : (num.test(attrW) ? parseInt(attrW) : 0)
+      const titles: string[] = []
+      const oldT = imgEl.getAttribute('title')
+      if (oldT && !/^w=\d+$/.test(oldT)) titles.push(oldT)
+      if (w > 0) titles.push('w=' + w)
+      md = '![' + alt + '](' + src + (titles.length ? ' "' + titles.join(' ') + '"' : '') + ')'
+    }
+    else if (tag === 'table') {
+      const rows = Array.from(node.querySelectorAll('tr')).map(r => Array.from(r.children).map(c => String(c.textContent || '').trim()))
+      if (rows.length) {
+        const head = '| ' + rows[0].join(' | ') + ' |'
+        const div = '| ' + rows[0].map(() => '---').join(' | ') + ' |'
+        const body = rows.slice(1).map(r => '| ' + r.join(' | ') + ' |').join('\n')
+        md = head + '\n' + div + (body ? '\n' + body : '') + '\n\n'
+      }
+    }
+    else if (tag === 'li') md = '- ' + inner.trim() + '\n'
+    else if (tag === 'ul' || tag === 'ol') md = inner + '\n'
+    else if (tag === 'blockquote') md = inner.split('\n').filter(Boolean).map(l => '> ' + l).join('\n') + '\n\n'
+    else md = inner
+    acc += md.length
+    return md
+  }
+
+  let raw = walk(el).replace(/\n{3,}/g, '\n\n')
+  const trimmed = raw.trim()
+  const headDrop = raw.length - trimmed.length - (trimmed.split('').reverse().join('').match(/^\s*/)?.[0].length || 0)
+  raw = trimmed
+  pos = pos < 0 ? raw.length : Math.max(0, pos - headDrop)
+  return { md: raw, pos: Math.min(pos, raw.length) }
+}
+
+/** 在光标位置插入图片（粘贴 / 选择上传）——直接操作 Markdown 字符串 */
+function insertImageAtCursor(url: string) {
+  const { md, pos } = syncWithCursor()
+  const imgMd = '![](' + url + ')'
+  const before = md.slice(0, pos)
+  const after = md.slice(pos)
+  const pre = before === '' || /\n\n$/.test(before) ? before : before + '\n\n'
+  const post = after === '' || /^\n\n/.test(after) ? after : '\n\n' + after
+  editorContent.value = (pre + imgMd + post).replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/** 在最近文本末尾的下一行插入图片（拖拽）——直接操作 Markdown 字符串 */
+function insertImageAtEnd(url: string) {
+  const md = editorContent.value.trim()
+  editorContent.value = (md ? md + '\n\n' : '') + '![](' + url + ')'
+}
+
+/** 在 Markdown 中按图片地址回写尺寸 title="w=NNN" */
+function setImageWidthInMarkdown(src: string, w: number): string {
+  const imgRe = /!\[[^\]]*\]\(([^)\s)]+|\([^)]*\))([^)]*)\)/g
+  return editorContent.value.replace(imgRe, (whole: string, url: string, rest: string) => {
+    if (!url.includes(src)) return whole
+    const titles: string[] = []
+    const old = rest.match(/"([^"]*)"/)
+    if (old && !/^w=\d+$/.test(old[1])) titles.push(old[1])
+    titles.push('w=' + w)
+    return whole.replace(rest, ' "' + titles.join(' ') + '"')
+  })
+}
+
+/** 上传图片并插入（统一入口：粘贴 / 拖拽 / 选择） */
+async function insertUploadedImage(file: File, mode: 'cursor' | 'end') {
+  if (!imageEditable()) {
+    ElMessage.info('请先新建或打开一篇笔记')
+    return
+  }
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('仅支持图片文件')
+    return
+  }
+  uploadingImage.value = true
+  try {
+    const url = await uploadNoteImage(file)
+    if (mode === 'cursor') insertImageAtCursor(url)
+    else insertImageAtEnd(url)
+    ElMessage.success('图片已插入，记得点击保存')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '图片上传失败')
+  } finally {
+    uploadingImage.value = false
+  }
+}
+
+/** 编辑器粘贴：识别剪贴板中的图片并插入光标位置 */
+function handleEditorPaste(e: ClipboardEvent) {
+  const items = Array.from(e.clipboardData?.items || [])
+  const imgItem = items.find(item => item.type.startsWith('image/'))
+  if (!imgItem) return
+  e.preventDefault()
+  const file = imgItem.getAsFile()
+  if (file) void insertUploadedImage(file, 'cursor')
+}
+
+/** 拖拽外部图片到编辑器：插入到最近文本末尾的下一行（Markdown 末尾追加） */
+function handleImageDrop(e: DragEvent) {
+  const files = Array.from(e.dataTransfer?.files || [])
+  const imgFile = files.find(f => f.type.startsWith('image/'))
+  if (!imgFile) return
+  e.preventDefault()
+  void insertUploadedImage(imgFile, 'end')
+}
+
+function handleDragOver(e: DragEvent) { e.preventDefault() }
+
+/** 图片缩放手柄：按住右下角圆点自由调整宽度（保持比例） */
+function handleEditorPointerDown(e: PointerEvent) {
+  const grip = (e.target as HTMLElement).closest('.img-grip')
+  if (!grip) return
+  const img = grip.closest('.img-line')?.querySelector('img') as HTMLImageElement | null
+  if (!img) return
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = img.clientWidth
+  const onMove = (ev: PointerEvent) => {
+    const w = Math.min(1000, Math.max(48, startW + (ev.clientX - startX)))
+    img.style.width = w + 'px'
+    img.style.height = 'auto'
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    const img = grip.closest('.img-line')?.querySelector('img') as HTMLImageElement | null
+    const src = img?.getAttribute('src') || ''
+    if (!img) return
+    // 1) 当前 DOM → Markdown（含缩放后的 w=NNN）
+    syncLiveEditor()
+    // 2) 保底：若转换未命中该图片尺寸，直接按地址回写（幂等）
+    if (src) {
+      const w = Math.min(1000, Math.max(48, img.clientWidth))
+      editorContent.value = setImageWidthInMarkdown(src, w)
+    }
+    // 3) 静默保存：缩放即入库，避免用户忘记保存导致尺寸/位置丢失
+    void saveDoc(true)
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+
+/** 图片是否可插入（已有文档或正在创建） */
+function imageEditable(): boolean {
+  return curDoc.id != null || creating.value
+}
+
 const mdInput = ref<HTMLInputElement | null>(null)
+const uploadingImage = ref(false)
 
 function openMdPicker() { mdInput.value?.click() }
 
-async function importMarkdown(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
+/** 导入入口：图片走上传插入，Markdown 走原导入逻辑 */
+async function importFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
   if (!file) return
+  if (file.type.startsWith('image/')) {
+    await insertUploadedImage(file, 'cursor')
+    return
+  }
   try {
     const text = await file.text()
     const title = file.name.replace(/\.md$/i, '')
@@ -391,15 +654,14 @@ async function importMarkdown(event: Event) {
   } catch (e: any) {
     ElMessage.error(e?.message || '导入失败')
   }
-  ;(event.target as HTMLInputElement).value = ''
 }
 
 // ─── 拖拽调整面板宽度（修复版） ────────────────────────────
-const LEFT_MIN = 176
-const LEFT_MAX = 420
-const RIGHT_MIN = 264
-const RIGHT_MAX = 640
-const CENTER_MIN = 360
+const LEFT_MIN = -176
+const LEFT_MAX = 1420
+const RIGHT_MIN = -264
+const RIGHT_MAX = 1640
+const CENTER_MIN = -360
 const leftPanelWidth = ref(Number(localStorage.getItem('roamly-notes-left-width')) || 220)
 const rightPanelWidth = ref(Number(localStorage.getItem('roamly-notes-right-width')) || 320)
 const showRightPanel = ref(localStorage.getItem('roamly-notes-right-visible') !== '0')
@@ -683,19 +945,19 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
           class="panel-collapse-btn"
           title="收起左侧面板"
           @click="showLeftPanel = false"
-        ><span class="panel-chevron" aria-hidden="true">‹</span></button>
+        ><img class="panel-btn-icon" :src="panelBtnLeft" alt="收起左栏" /></button>
       </div>
 
       <div class="panel-toolbar">
         <input 
           ref="mdInput" 
           type="file" 
-          accept=".md,text/markdown" 
+          accept=".md,text/markdown,image/jpeg,image/png,image/gif" 
           hidden 
-          @change="importMarkdown" 
+          @change="importFile" 
         />
-        <button class="toolbar-btn" @click="openMdPicker" title="导入 Markdown">
-          📥 导入 MD
+        <button class="toolbar-btn" @click="openMdPicker" title="导入 Markdown 或图片">
+          📥 导入文件
         </button>
         <button 
           class="new-note-btn" 
@@ -749,7 +1011,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
       class="left-restore-btn"
       title="展开笔记列表"
       @click="showLeftPanel = true"
-    ><span class="panel-chevron" aria-hidden="true">›</span></button>
+    ><img class="panel-btn-icon" :src="panelBtnRight" alt="展开左栏" /></button>
 
     <!-- ===== 中间编辑区 ===== -->
     <main class="center-panel">
@@ -792,7 +1054,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
               class="save-btn" 
               :style="{ background: effectiveTheme.accent }"
               :disabled="saving"
-              @click="saveDoc"
+              @click="saveDoc()"
             >
               {{ saving ? '保存中…' : '保存' }}
             </button>
@@ -804,7 +1066,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
         <div class="editor-area">
           <div class="editor-main">
             
-            <div ref="liveEditorRef" class="preview-content markdown-body live-editor" contenteditable="true" spellcheck="false" v-html="renderedPreview" @blur="syncLiveEditor" @click="handlePreviewClick"></div>
+            <div ref="liveEditorRef" class="preview-content markdown-body live-editor" contenteditable="true" spellcheck="false" v-html="renderedPreview" @blur="syncLiveEditor" @click="handlePreviewClick" @paste="handleEditorPaste" @drop="handleImageDrop" @dragover="handleDragOver" @pointerdown="handleEditorPointerDown"></div>
           </div>
           
         </div>
@@ -834,7 +1096,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
           class="panel-collapse-btn"
           title="收起右侧面板 (Ctrl+B)"
           @click="showRightPanel = false"
-        ><span class="panel-chevron" aria-hidden="true">›</span></button>
+        ><img class="panel-btn-icon" :src="panelBtnRight" alt="收起右栏" /></button>
       </div>
 
       <!-- 可滚动内容区 -->
@@ -874,7 +1136,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
           <button 
             class="theme-save-btn"
             :style="{ background: effectiveTheme.accent }"
-            @click="saveDoc"
+            @click="saveDoc()"
           >💾 保存主题</button>
         </div>
       </div>
@@ -944,10 +1206,10 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
           <span class="collapse-icon">{{ shortcutsVisible ? '▼' : '▶' }}</span>
         </div>
         <div class="section-body" :style="getSectionBodyHeightStyle('shortcuts')" v-if="shortcutsVisible">
-          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</div>
-          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>E</kbd> 切换预览</div>
-          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>B</kbd> 显示/隐藏右侧</div>
-          <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>A</kbd> 全选</div>
+          <div class="shortcut-row"><kbd>Command</kbd> + <kbd>S</kbd> 保存</div>
+          <div class="shortcut-row"><kbd>Command</kbd> + <kbd>E</kbd> 切换预览</div>
+          <div class="shortcut-row"><kbd>Command</kbd> + <kbd>B</kbd> 显示 / 隐藏右侧</div>
+          <div class="shortcut-row"><kbd>Command</kbd> + <kbd>A</kbd> 全选</div>
 
         </div>
       </div>
@@ -961,7 +1223,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
       class="right-restore-btn"
       title="展开右侧面板 (Ctrl+B)"
       @click="showRightPanel = true"
-    ><span class="panel-chevron" aria-hidden="true">‹</span></button>
+    ><img class="panel-btn-icon" :src="panelBtnLeft" alt="展开右栏" /></button>
   </div>
 </template>
 
@@ -1029,25 +1291,31 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 
 /* 收起/展开按钮 */
 .panel-collapse-btn {
-  width: 30px;
-  height: 30px;
-  border: 1px solid #d8dade;
-  border-radius: 6px;
-  background: #fff;
-  color: #646a73;
-  font-size: 13px;
-  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  padding: 0;
   cursor: pointer;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all .15s;
+  transition: transform .15s, box-shadow .15s;
+
+  .panel-btn-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+    border-radius: 50%;
+  }
 
   &:hover {
-    color: #245bdb;
-    border-color: #9bb8ff;
-    background: #f4f7ff;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 5px rgba(51,112,255,0.15), 0 4px 14px rgba(51,112,255,0.35);
   }
 }
 
@@ -1105,26 +1373,30 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 /* 左栏收起后的展开按钮 */
 .left-restore-btn {
   position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 44px;
-  border: 1px solid #e5e6e8;
-  border-left: 0;
-  border-radius: 0 12px 12px 0;
-  background: var(--card, #fffdf8);
-  color: #646a73;
-  font-size: 24px;
+  left: 12px;
+  top: 14px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  padding: 0;
   cursor: pointer;
   z-index: 50;
-  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.06);
-  transition: all .15s;
+  transition: transform .15s, box-shadow .15s;
+
+  .panel-btn-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+    border-radius: 50%;
+  }
 
   &:hover {
-    color: #245bdb;
-    background: #f4f7ff;
-    border-color: #9bb8ff;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 5px rgba(51,112,255,0.15), 0 4px 14px rgba(51,112,255,0.35);
   }
 }
 
@@ -1178,30 +1450,33 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 /* 右栏收起后的展开按钮 */
 .right-restore-btn {
   position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 44px;
-  border: 1px solid #e5e6e8;
-  border-right: 0;
-  border-radius: 12px 0 0 12px;
-  background: var(--card, #fffdf8);
-  color: #646a73;
-  font-size: 24px;
+  right: 12px;
+  top: 14px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  padding: 0;
   cursor: pointer;
   z-index: 50;
-  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.06);
-  transition: all .15s;
+  transition: transform .15s, box-shadow .15s;
+
+  .panel-btn-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+    border-radius: 50%;
+  }
 
   &:hover {
-    color: #245bdb;
-    background: #f4f7ff;
-    border-color: #9bb8ff;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 5px rgba(51,112,255,0.15), 0 4px 14px rgba(51,112,255,0.35);
   }
 }
 
-.panel-chevron { display: block; line-height: 1; transform: translateY(-1px); }
 
 .panel-toolbar {
   padding: 12px 16px;
@@ -2011,6 +2286,45 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
     border-radius: 10px;
     margin: 12px 0;
   }
+
+  /* 图片行：支持缩放（右下角手柄）与拖动搬移 */
+  .img-line {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    margin: 12px 0;
+
+    img {
+      display: block;
+      max-width: 100%;
+      border-radius: 10px;
+      margin: 0;
+      cursor: move;
+      -webkit-user-drag: element;
+    }
+
+    .img-grip {
+      position: absolute;
+      right: -7px;
+      bottom: -7px;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--notes-accent, #3370ff);
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .25);
+      cursor: nwse-resize;
+      opacity: 0;
+      transition: opacity .15s;
+      z-index: 2;
+    }
+
+    &:hover .img-grip {
+      opacity: 1;
+    }
+  }
+
+  p.img-line, .img-line { display: block; }
 
   table {
     border-collapse: collapse;

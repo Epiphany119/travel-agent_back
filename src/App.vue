@@ -85,19 +85,76 @@ body {
   height: 100vh;
   min-height: 0;
   overflow: visible;
+  padding: 0;
+  background: var(--paper, #F7F3EA);
 }
 
 .app-main {
   flex: 1;
+  height: calc(100vh - 16px);
   min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: visible;
+  margin: 8px 0 8px 8px;
+  border-radius: 18px;
+  border: 1px solid var(--line, #e5e6e8);
+  background: var(--card, #FFFDF8);
 }
 
-.app-main > *:not(.app-header) { border-radius: 18px 0 0 0; }
-.app-layout > .global-right-panel { border-radius: 22px 0 0 22px; overflow: hidden; margin: 8px 0 8px 8px; }
+/* Header sticky - 跟随系统主题色，写死不动 */
+.app-main > .app-header { 
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-radius: 18px 18px 0 0;
+  background: var(--forest);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.app-main > .app-header .search input {
+  background: transparent;
+  color: #fff;
+}
+
+.app-main > .app-header .search input::placeholder {
+  color: rgba(255,255,255,0.5);
+}
+
+.app-main > .app-header .search svg {
+  color: rgba(255,255,255,0.7);
+}
+
+.app-main > .app-header .icon-btn {
+  color: #fff;
+}
+
+.app-main > .app-header .icon-btn:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.app-main > .app-header .new-btn {
+  background: #fff;
+  color: var(--forest);
+}
+
+.app-main > *:not(.app-header) { 
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Notes page has its own layout; keep .app-main as simple flex container */
+.notes-app {
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 0 !important;
+  height: 100vh !important;
+}
+
+/* 右侧面板样式由 GlobalRightPanel 组件内部控制 */
 
 /* Element Plus 主色对齐品牌色 */
 .el-button--primary {

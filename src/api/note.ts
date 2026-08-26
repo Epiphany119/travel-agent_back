@@ -88,3 +88,24 @@ export async function updateNote(id: number, data: NoteDocument): Promise<NoteDo
 export async function deleteNote(id: number): Promise<void> {
   await request.delete(`/notes/${id}`, { params: { userId: getNoteUserId() } })
 }
+
+/**
+ * 上传笔记图片（jpg/jpeg/png/gif）。
+ *
+ * <p>图片保存到后端用户本地目录，数据库只记录访问路径；
+ * 前端将返回的 URL 以 Markdown 图片语法写入笔记内容。</p>
+ *
+ * @param file 图片文件
+ * @returns 可访问路径，如 /uploads/note/user_001/xxx.jpg
+ */
+export async function uploadNoteImage(file: File): Promise<string> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const r = await request.post<unknown, ApiEnvelope<{ url: string }>>(
+    '/notes/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      params: { userId: getNoteUserId() }
+    }
+  )
+  return r.data.url
+}
