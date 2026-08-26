@@ -171,6 +171,7 @@ public class UserBizService {
 
     @Transactional
     public InspirationPO addInspiration(InspirationPO po) {
+        if (po.getUserId() == null || po.getUserId().isBlank()) po.setUserId("user_001");
         if (po.getName() == null) po.setName("");
         if (po.getImageUrl() == null) po.setImageUrl("");
         if (po.getQuote() == null) po.setQuote("");
