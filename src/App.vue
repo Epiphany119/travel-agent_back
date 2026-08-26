@@ -82,7 +82,9 @@ body {
 /* 系统级三层布局：左侧边栏 | 中间主体 | 右侧面板 */
 .app-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app-main {
@@ -90,7 +92,12 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
+
+.app-main > *:not(.app-header) { border-radius: 18px 0 0 0; }
+.app-layout > .global-right-panel { border-radius: 22px 0 0 22px; overflow: hidden; margin: 8px 0 8px 8px; }
 
 /* Element Plus 主色对齐品牌色 */
 .el-button--primary {

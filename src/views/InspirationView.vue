@@ -4,27 +4,23 @@ import { useRouter } from 'vue-router'
 import { computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listInspirations, addInspiration, updateInspiration, deleteInspiration, uploadImage, type Inspiration } from '@/api/user'
+import { marked } from 'marked'
 
 const router = useRouter()
 
-function openView(item: Inspiration) {
-  // 跳转到 PublishNoteView 查看模式，预填灵感数据
-  const content = [
-    item.quote ? `“${item.quote}”` : '',
-    item.description ? `\n\n${item.description}` : '',
-    item.estimatedBudget ? `\n\n预算：¥${item.estimatedBudget.toLocaleString()}` : '',
-    item.bestSeason ? `\n最佳季节：${item.bestSeason}` : '',
-  ].filter(Boolean).join('')
-  router.push({
-    path: '/publish',
-    query: {
-      title: item.name,
-      content: content || `想去 ${item.name} 看看，${item.quote || item.description || '把这里加入下一段旅行的计划。'}`,
-      image: item.imageUrl || '',
-      tags: item.tags || '',
-      city: '',
-    }
-  })
+const selected = ref<Inspiration | null>(null)
+const studioEditing = ref(false)
+function openView(item: Inspiration) { selected.value = { ...item }; studioEditing.value = false }
+function openStudioEdit() { if (selected.value) { form.value = { ...selected.value }; studioEditing.value = true } }
+function closeStudio() { selected.value = null; studioEditing.value = false }
+async function saveStudio() {
+  if (!selected.value?.id) return
+  if (!form.value.name?.trim()) { ElMessage.warning('请填写目的地名称'); return }
+  await updateInspiration(selected.value.id, { ...form.value, imageUrl: (form.value.imageUrl || '').trim() })
+  selected.value = { ...form.value }
+  studioEditing.value = false
+  await load()
+  ElMessage.success('已保存')
 }
 
 const loading = ref(false)
@@ -91,6 +87,9 @@ async function save() {
     return
   }
   try {
+    // Keep the uploaded URL in the payload explicitly so it is persisted with
+    // the inspiration record, rather than only shown in the local preview.
+    form.value.imageUrl = (form.value.imageUrl || '').trim()
     if (editing.value?.id) {
       await updateInspiration(editing.value.id, form.value)
       ElMessage.success('已更新')
@@ -118,8 +117,9 @@ async function remove(item: Inspiration) {
 }
 
 const seasonOptions = ['不限', '春季', '夏季', '秋季', '冬季']
-const statusText = (s?: number) => (s === 0 ? '待规划' : '已完成')
+const statusText = (s?: number) => (s === 0 ? '待规划' : '已规划')
 const budgetText = (b?: number) => (b ? `¥${b.toLocaleString()}` : '—')
+const renderMarkdown = (value?: string) => marked.parse(value || '') as string
 
 // 无图片时生成柔和的渐变占位背景，避免一片死灰
 const palettes = [
@@ -145,7 +145,15 @@ onMounted(load)
       <button class="add-btn" @click="openAdd">＋ 添加目的地</button>
     </section>
 
-    <section class="grid" v-loading="loading">
+    <section v-if="selected" class="studio">
+      <div class="studio-toolbar"><button class="ghost" @click="closeStudio">← 返回</button><span>{{ studioEditing ? '正在编辑' : '预览' }}</span><button class="add-btn" @click="studioEditing ? saveStudio() : openStudioEdit()">{{ studioEditing ? '保存' : '编辑' }}</button></div>
+      <article class="studio-card">
+        <div class="studio-cover" :style="thumbStyle(selected, 0)"><span class="status" :class="selected.status === 0 ? 'pending' : 'done'">{{ statusText(selected.status) }}</span></div>
+        <div class="studio-content" v-if="!studioEditing"><h2>{{ selected.name }}</h2><div class="markdown-body" v-html="renderMarkdown(selected.description)"></div><div v-if="selected.imageUrl" class="rendered-image"><img :src="selected.imageUrl" :alt="selected.name" /></div><div class="chips"><span v-for="t in (selected.tags || '').split(',').filter(Boolean)" :key="t" class="chip">{{ t }}</span></div><p class="meta">最佳季节：{{ selected.bestSeason || '不限' }}　预算：{{ budgetText(selected.estimatedBudget) }}</p></div>
+        <div class="studio-content studio-form" v-else><label>目的地<input v-model="form.name" /></label><label>一句话文案<input v-model="form.quote" /></label><label>详细描述<textarea v-model="form.description" rows="5"></textarea></label><label>图片 URL<input v-model="form.imageUrl" /></label><div class="row"><label>标签<input v-model="form.tags" /></label><label>预算<input v-model.number="form.estimatedBudget" type="number" /></label></div><label>最佳季节<select v-model="form.bestSeason"><option v-for="s in seasonOptions" :key="s" :value="s">{{ s }}</option></select></label></div>
+      </article>
+    </section>
+    <section v-else class="grid" v-loading="loading">
       <article v-for="(item, i) in list" :key="item.id" class="card clickable" @click="openView(item)">
         <div class="thumb" :style="thumbStyle(item, i)" @click.stop>
           <span class="status" :class="item.status === 0 ? 'pending' : 'done'">
@@ -178,7 +186,7 @@ onMounted(load)
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="editing?.id ? '编辑目的地' : '添加目的地'" width="520px">
+    <el-dialog v-model="dialogVisible" :title="editing?.id ? '编辑目的地' : '添加目的地'" width="620px" top="5vh" class="inspiration-editor">
       <el-form label-position="top">
         <el-form-item label="名称 *">
           <el-input v-model="form.name" placeholder="如：冰岛极光之旅" />
@@ -254,7 +262,7 @@ onMounted(load)
 </template>
 
 <style scoped lang="scss">
-.page { min-height: 100vh; padding-bottom: 80px; }
+.page { min-height: 100vh; height: 100%; padding: 24px 0 80px; overflow-y: auto; }
 .head { width: min(1160px, calc(100% - 40px)); margin: 24px auto 30px; }
 .eyebrow { color: var(--sunset); font-size: 10px; font-weight: 800; letter-spacing: 0.18em; margin: 0 0 8px; }
 .head h1 { font: 34px "DM Serif Display", "Noto Sans SC"; color: var(--ink); margin: 0; }
@@ -268,6 +276,23 @@ onMounted(load)
   width: min(1160px, calc(100% - 40px)); margin: auto;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 22px;
 }
+.studio { width: min(980px, calc(100% - 40px)); margin: 0 auto; }
+.studio-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.studio-card { background:var(--card); border:1px solid var(--line); border-radius:20px; overflow:hidden; box-shadow:var(--shadow-soft); }
+.studio-cover { height:280px; background-size:cover; background-position:center; padding:16px; }
+.studio-content { padding:30px 34px 38px; }
+.studio-content h2 { margin:0 0 16px; font:32px 'DM Serif Display','Noto Sans SC'; color:var(--ink); }
+.studio-content .quote { font-size:16px; }
+.chips { display:flex; flex-wrap:wrap; gap:7px; margin:18px 0; }
+.studio-form { display:grid; gap:16px; }
+.studio-form label { display:grid; gap:7px; color:var(--ink-2); font-size:12px; font-weight:700; }
+.studio-form input,.studio-form textarea,.studio-form select { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:var(--card); color:var(--ink); font:14px inherit; }
+.markdown-body { color: var(--ink-2); font-size: 15px; line-height: 1.8; }
+.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) { color: var(--ink); margin: 18px 0 8px; }
+.markdown-body :deep(p) { margin: 8px 0; }
+.markdown-body :deep(ul) { padding-left: 22px; }
+.markdown-body :deep(img) { max-width: 100%; border-radius: 12px; display: block; margin: 12px 0; }
+.rendered-image img { max-width: 100%; max-height: 320px; object-fit: cover; border-radius: 12px; margin-top: 16px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; box-shadow: 0 1px 2px rgba(22,78,66,.04); transition: transform .25s, box-shadow .25s; }
 .card.clickable { cursor: pointer; }
 .card:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(22,78,66,.10); }
@@ -297,4 +322,6 @@ onMounted(load)
 .upload-preview { font-size: 12px; color: #687873; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 .image-preview { margin-top: 8px; }
 .image-preview img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+:deep(.inspiration-editor .el-dialog__body) { max-height: 78vh; overflow-y: auto; }
+:deep(.inspiration-editor .el-dialog__header) { border-bottom: 1px solid var(--line); }
 </style>

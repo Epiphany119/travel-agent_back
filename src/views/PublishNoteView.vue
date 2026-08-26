@@ -144,7 +144,6 @@ function renderInline(text: string) {
       </div>
       <div class="actions" v-if="mode === 'view'">
         <button class="btn-ghost" @click="router.back()">← 返回</button>
-        <button class="btn-primary" @click="mode = 'edit'">✏️ 编辑</button>
       </div>
       <div class="actions" v-else>
         <button class="btn-ghost" @click="mode = 'view'; title = (route.query.title as string) || ''; content = (route.query.content as string) || ''">← 取消</button>
@@ -292,7 +291,7 @@ function renderInline(text: string) {
   padding: 14px 0;
   margin-bottom: 36px;
 }
-.toolbar { display: flex; justify-content: space-between; align-items: center; width: min(920px, calc(100% - 60px)); margin: 0 auto; }
+.toolbar { display: flex; justify-content: flex-start; align-items: center; gap: 12px; width: min(920px, calc(100% - 60px)); margin: 0 auto; }
 .mode-switch { display: flex; gap: 6px; background: #f3f5f4; padding: 4px; border-radius: 10px; }
 .mode-switch button {
   border: 0;

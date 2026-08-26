@@ -97,9 +97,10 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
         :key="item.path"
         class="menu-item"
         :class="{ active: isActive(item) }"
+        :title="item.label"
         @click="navigate(item)"
       >
-        <span class="ico" v-html="icons[item.icon]"></span>
+        <span class="ico" :aria-label="item.label" v-html="icons[item.icon]"></span>
         <span class="label">{{ item.label }}</span>
       </a>
     </nav>
@@ -111,9 +112,10 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
         :key="item.path"
         class="menu-item"
         :class="{ active: isActive(item) }"
+        :title="item.label"
         @click="navigate(item)"
       >
-        <span class="ico" v-html="icons[item.icon]"></span>
+        <span class="ico" :aria-label="item.label" v-html="icons[item.icon]"></span>
         <span class="label">{{ item.label }}</span>
       </a>
     </nav>
@@ -138,24 +140,26 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
 
 <style scoped lang="scss">
 .sidebar {
-  width: 248px;
+  width: 56px;
   flex-shrink: 0;
-  height: 100vh;
+  height: calc(100vh - 16px);
+  margin: 8px 0 8px 8px;
+  border-radius: 18px;
   position: sticky;
   top: 0;
   display: flex;
   flex-direction: column;
   background: var(--forest);
-  padding: 24px 16px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  padding: 14px 8px;
+  overflow: visible;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 2px 10px 22px;
+  justify-content: center;
+  gap: 0;
+  padding: 2px 0 22px;
   cursor: pointer;
 }
 
@@ -167,34 +171,30 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
 }
 
 .brand-name {
-  font: 25px "DM Serif Display", serif;
-  letter-spacing: -0.3px;
-  color: #FFFDF8;
+  display: none;
 }
 
 .group-label {
-  color: #7FA294;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  padding: 0 13px;
-  margin: 6px 0 8px;
+  display: none;
 }
 
 .menu {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 14px;
 }
 
 .menu-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 11px 13px;
-  border-radius: 13px;
+  justify-content: center;
+  gap: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
   color: #A9C4B9;
   font-size: 14px;
   font-weight: 600;
@@ -211,6 +211,10 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
     color: #ffffff;
   }
 }
+
+.menu-item .label { display: none; }
+.ico { position: relative; }
+.ico:hover::after { content: attr(aria-label); position: absolute; left: 34px; top: 50%; transform: translateY(-50%); white-space: nowrap; z-index: 1000; padding: 7px 10px; border-radius: 7px; background: var(--ink); color: var(--card); font-size: 12px; box-shadow: var(--shadow-soft); pointer-events:none; }
 
 .ico {
   width: 19px;
@@ -233,8 +237,9 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
 .user {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 10px;
+  justify-content: center;
+  gap: 0;
+  padding: 8px 0;
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
@@ -278,6 +283,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
     font-size: 11px;
   }
 }
+.user-meta, .goto { display: none; }
 
 .goto {
   width: 15px;
@@ -287,7 +293,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
 }
 
 @media (max-width: 860px) {
-  .sidebar { width: 68px; padding: 18px 10px; }
+  .sidebar { width: 56px; padding: 14px 8px; }
   .brand { justify-content: center; padding: 4px 0 18px; }
   .brand-name { display: none; }
   .group-label { display: none; }

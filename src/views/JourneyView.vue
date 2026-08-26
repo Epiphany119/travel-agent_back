@@ -12,6 +12,8 @@ const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
 const list = ref<JourneyDetail[]>([])
+const selectedJourney = ref<JourneyDetail | null>(null)
+const journeyStudioEditing = ref(false)
 
 // 新增/编辑旅程
 const journeyDialog = ref(false)
@@ -80,6 +82,15 @@ function openEdit(d: JourneyDetail) {
   editingJourney.value = d.journey
   jform.value = { ...d.journey }
   journeyDialog.value = true
+}
+function openJourneyStudio(d: JourneyDetail) { selectedJourney.value = { ...d, journey: { ...d.journey }, points: [...(d.points || [])], images: [...(d.images || [])] }; journeyStudioEditing.value = false }
+function closeJourneyStudio() { selectedJourney.value = null; journeyStudioEditing.value = false }
+async function saveJourneyStudio() {
+  if (!selectedJourney.value?.journey.id) return
+  await updateJourney(selectedJourney.value.journey.id, selectedJourney.value.journey)
+  journeyStudioEditing.value = false
+  await load()
+  ElMessage.success('已保存')
 }
 async function saveJourney() {
   if (!jform.value.destination) { ElMessage.warning('请填写目的地'); return }
@@ -231,8 +242,12 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section class="list" v-loading="loading">
-      <article v-for="d in list" :key="d.journey.id" class="card">
+    <section v-if="selectedJourney" class="journey-studio">
+      <div class="studio-toolbar"><button class="ghost" @click="closeJourneyStudio">← 返回</button><span>{{ journeyStudioEditing ? '正在编辑' : '预览' }}</span><button class="add-btn" @click="journeyStudioEditing ? saveJourneyStudio() : journeyStudioEditing = true">{{ journeyStudioEditing ? '保存' : '编辑' }}</button></div>
+      <article class="journey-studio-card"><div class="journey-studio-cover" v-if="selectedJourney.images.length"><img :src="selectedJourney.images[0].imageUrl" alt="" /></div><div class="journey-studio-content" v-if="!journeyStudioEditing"><h2>{{ selectedJourney.journey.destination }}</h2><p class="dates">{{ dateRange(selectedJourney) }} · {{ selectedJourney.journey.totalDays || '—' }} 天</p><p class="summary">{{ selectedJourney.journey.summary || '还没有旅程总结。' }}</p><p class="summary">{{ selectedJourney.journey.highlight || '' }}</p><div class="chips"><span>{{ selectedJourney.journey.travelType || '未设置类型' }}</span><span v-if="selectedJourney.journey.totalCost">¥{{ selectedJourney.journey.totalCost.toLocaleString() }}</span><span v-if="selectedJourney.journey.departureCity">从 {{ selectedJourney.journey.departureCity }} 出发</span></div><h4 class="sec">路线 · {{ selectedJourney.points.length }} 站</h4><div class="point" v-for="(p,i) in selectedJourney.points" :key="i"><span class="idx">{{ i + 1 }}</span><div class="p-info"><b>{{ p.name }}</b><p>{{ p.description }}</p></div></div></div><div class="journey-studio-content studio-form" v-else><label>目的地<input v-model="selectedJourney.journey.destination" /></label><label>出发城市<input v-model="selectedJourney.journey.departureCity" /></label><div class="row"><label>开始日期<input v-model="selectedJourney.journey.startDate" type="date" /></label><label>结束日期<input v-model="selectedJourney.journey.endDate" type="date" /></label></div><label>总结<textarea v-model="selectedJourney.journey.summary" rows="4"></textarea></label><label>亮点<input v-model="selectedJourney.journey.highlight" /></label><label>小贴士<textarea v-model="selectedJourney.journey.tips" rows="3"></textarea></label></div></article>
+    </section>
+    <section v-else class="list" v-loading="loading">
+      <article v-for="d in list" :key="d.journey.id" class="card" @click="openJourneyStudio(d)">
         <div class="cover" v-if="d.images && d.images.length">
           <img :src="d.images[0].imageUrl" alt="" />
         </div>
@@ -241,6 +256,7 @@ onMounted(async () => {
             <h3>{{ d.journey.destination }}</h3>
             <span class="rating" v-if="d.journey.rating">★ {{ d.journey.rating }}</span>
           </div>
+          <span class="journey-status">{{ d.journey.status === 0 ? '待记录' : '已完成' }}</span>
           <p class="dates">{{ dateRange(d) }} · {{ d.journey.totalDays }} 天</p>
           <p class="summary" v-if="d.journey.summary">{{ d.journey.summary }}</p>
           <div class="chips">
@@ -382,7 +398,7 @@ onMounted(async () => {
 </template>
 
 <style scoped lang="scss">
-.page { min-height: 100vh; padding-bottom: 80px; }
+.page { min-height: 100vh; height: 100%; padding: 24px 0 80px; overflow-y: auto; }
 .head { width: min(1160px, calc(100% - 40px)); margin: 24px auto 30px; }
 .eyebrow { color: var(--sunset); font-size: 10px; font-weight: 800; letter-spacing: 0.18em; margin: 0 0 8px; }
 .head h1 { font: 34px "DM Serif Display", "Noto Sans SC"; color: var(--ink); margin: 0; }
@@ -394,11 +410,21 @@ onMounted(async () => {
 
 .list { width: min(1160px, calc(100% - 40px)); margin: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 22px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; }
+.journey-studio { width:min(980px,calc(100% - 40px)); margin:0 auto; }
+.journey-studio-card { background:var(--card); border:1px solid var(--line); border-radius:20px; overflow:hidden; box-shadow:var(--shadow-soft); }
+.journey-studio-cover { height:280px; }
+.journey-studio-cover img { width:100%; height:100%; object-fit:cover; }
+.journey-studio-content { padding:30px 34px 38px; }
+.journey-studio-content h2 { margin:0 0 14px; font:32px 'DM Serif Display','Noto Sans SC'; color:var(--ink); }
+.studio-form { display:grid; gap:16px; }
+.studio-form label { display:grid; gap:7px; color:var(--ink-2); font-size:12px; font-weight:700; }
+.studio-form input,.studio-form textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:var(--card); color:var(--ink); font:14px inherit; }
 .cover { height: 160px; }
 .cover img { width: 100%; height: 100%; object-fit: cover; }
 .info { padding: 18px; }
 .topline { display: flex; justify-content: space-between; align-items: center; }
 .topline h3 { margin: 0; color: var(--ink); font-size: 19px; }
+.journey-status { display: inline-block; margin-top: 6px; padding: 3px 8px; border-radius: 10px; background: var(--roam-soft); color: var(--forest); font-size: 11px; font-weight: 700; }
 .rating { color: var(--sunset); font-weight: 800; font-size: 13px; }
 .dates { color: #687873; font-size: 12px; margin: 6px 0; }
 .summary { color: #4a5f58; font-size: 13px; line-height: 1.6; margin: 0 0 12px; }

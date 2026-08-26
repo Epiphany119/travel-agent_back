@@ -128,7 +128,7 @@ function copyUrl(url: string) {
   border-left: 1px solid var(--line, #e5e6e8);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   box-shadow: -2px 0 12px rgba(0, 0, 0, 0.04);
   isolation: isolate;
 }

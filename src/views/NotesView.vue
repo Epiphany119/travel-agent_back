@@ -858,7 +858,10 @@ function startOutlineResize(e: PointerEvent) {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #e5e6e8;
+  border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
+  border-radius: 18px;
+  margin: 8px 0 8px 8px;
+  box-shadow: 4px 0 18px rgba(31,35,41,.10);
   overflow: hidden;
   will-change: transform, opacity;
 }
@@ -957,7 +960,7 @@ function startOutlineResize(e: PointerEvent) {
   height: 44px;
   border: 1px solid #e5e6e8;
   border-left: 0;
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 12px 12px 0;
   background: var(--card, #fffdf8);
   color: #646a73;
   font-size: 24px;
@@ -1002,7 +1005,7 @@ function startOutlineResize(e: PointerEvent) {
   height: 44px;
   border: 1px solid #e5e6e8;
   border-right: 0;
-  border-radius: 6px 0 0 6px;
+  border-radius: 12px 0 0 12px;
   background: var(--card, #fffdf8);
   color: #646a73;
   font-size: 24px;
@@ -1111,7 +1114,7 @@ function startOutlineResize(e: PointerEvent) {
 
 /* ─── 拖拽手柄（修复版） ─────────────────────────────────── */
 .drag-handle {
-  width: 4px;
+  width: 12px;
   flex-shrink: 0;
   cursor: col-resize;
   background: transparent;
@@ -1136,15 +1139,14 @@ function startOutlineResize(e: PointerEvent) {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 2px;
-    height: 60px;
-    border-radius: 1px;
-    background: transparent;
+    width: 4px;
+    height: 72px;
+    border-radius: 999px;
+    background: rgba(31,35,41,.18);
     transition: background .15s;
   }
 
-  &:hover::after { background: #c5c7ca; }
-  &:hover { background: rgba(0,0,0,0.02); }
+  &:hover::after { background: var(--notes-accent, #3370ff); box-shadow: 0 0 0 4px color-mix(in srgb, var(--notes-accent, #3370ff) 14%, transparent); }
   &:active { background: rgba(51, 112, 255, 0.05); }
   &:active::after { background: #3370ff; }
 }
@@ -1160,6 +1162,10 @@ function startOutlineResize(e: PointerEvent) {
   min-width: 0;
   overflow: hidden;
   background: var(--notes-bg, #fff);
+  border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
+  border-radius: 18px;
+  margin: 8px 0;
+  box-shadow: 0 8px 24px rgba(31,35,41,.10);
 }
 
 .editor-toolbar {
@@ -1167,7 +1173,8 @@ function startOutlineResize(e: PointerEvent) {
   align-items: center;
   justify-content: space-between;
   padding: 12px 24px;
-  border-bottom: 1px solid #e5e6e8;
+  border-bottom: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
+  border-radius: 18px 18px 0 0;
   gap: 16px;
   flex-shrink: 0;
   background: var(--notes-bg, #fff);
@@ -1361,7 +1368,10 @@ function startOutlineResize(e: PointerEvent) {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid #e5e6e8;
+  border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
+  border-radius: 18px;
+  margin: 8px 8px 8px 0;
+  box-shadow: -4px 0 18px rgba(31,35,41,.10);
   overflow-y: auto;
   background: var(--notes-bg, #fafafa);
 }

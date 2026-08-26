@@ -73,7 +73,6 @@ const agentSteps = computed(() => [
   { icon: '¥', title: '预算平衡', text: `控制在 ¥${budget.value.toLocaleString()} 总预算内` }
 ])
 const totalPlanCost = computed(() => structuredDays.value.flat().reduce((sum, item) => sum + (item.cost || 0), 0))
-const scheduleDialog = ref(false)
 const scheduling = ref(false)
 async function addToSchedule(target: 'inspiration' | 'journey') {
   if (scheduling.value) return
@@ -83,7 +82,12 @@ async function addToSchedule(target: 'inspiration' | 'journey') {
     const noteContent = { overview: { destination: result.destination || destination.value, preferences: preferenceSummary.value }, strategies: agentSteps.value.map(s => ({ title: s.title, text: s.text })), budget: { total: totalPlanCost.value || budget.value, items: [] }, days: structuredDays.value.map((items: any[], i: number) => ({ day: i + 1, items })), reminders: [], packing: [], reflections: {} }
     await saveTravelNote({ userId: USER_ID, title: `${result.destination || destination.value} · ${days.value}日旅行计划`, destination: result.destination || destination.value, noteType: target, sourceType: 'agent', totalDays: days.value, travelers: travelers.value, budget: totalPlanCost.value || budget.value, contentJson: JSON.stringify(noteContent), status: target === 'journey' ? 'planned' : 'draft' })
     if (target === 'inspiration') {
-      await addInspiration({ userId: USER_ID, name: result.destination || destination.value, description: 'Roamly 为你生成的旅行方案', quote: preferenceSummary.value, estimatedBudget: totalPlanCost.value || budget.value, status: 0 })
+      const planMarkdown = structuredDays.value.map((items: any[], i: number) => {
+        const rows = items.map((a: any) => `- **${a.time || ''} ${a.name || ''}**\n  - 地点：${a.location || ''}\n  - 交通：${a.transport || ''}\n  - 备注：${a.notes || ''}\n  - 费用：¥${a.cost || 0}`).join('\n')
+        return `## Day ${i + 1}\n${rows}`
+      }).join('\n\n')
+      const firstImage = structuredDays.value.flat().find((a: any) => a.image || a.imageUrl)?.image || structuredDays.value.flat().find((a: any) => a.imageUrl)?.imageUrl || ''
+      await addInspiration({ userId: USER_ID, name: result.destination || destination.value, imageUrl: firstImage, description: planMarkdown || 'Roamly 为你生成的旅行方案', quote: preferenceSummary.value, tags: 'AI规划,旅行计划', estimatedBudget: totalPlanCost.value || budget.value, status: 0 })
     } else {
       const start = new Date(); start.setDate(start.getDate() + 1)
       const end = new Date(start); end.setDate(start.getDate() + days.value - 1)
@@ -91,7 +95,6 @@ async function addToSchedule(target: 'inspiration' | 'journey') {
       const created = await addJourney({ userId: USER_ID, destination: result.destination || destination.value, totalDays: days.value, startDate: start.toISOString().slice(0,10), endDate: end.toISOString().slice(0,10), totalCost: totalPlanCost.value || budget.value, summary: preferenceSummary.value, travelType: travelStyle.value, status: 1 })
       if (created.data?.id && points.length) await saveJourneyPoints(created.data.id, points)
     }
-    scheduleDialog.value = false
     ElMessage.success(target === 'inspiration' ? '已加入灵感目的地' : '已加入我的旅程')
   } catch { ElMessage.error('加入失败，请稍后重试') } finally { scheduling.value = false }
 }
@@ -482,15 +485,8 @@ function getMealType(time: string): string {
         <div class="plan-head">
           <div><p class="eyebrow">YOUR PERSONAL TRIP</p><h3>{{ destination }} · {{ dayTabs.length }}日慢旅行</h3><p class="plan-preferences">{{ preferenceSummary }}</p></div>
           <span class="plan-cost" v-if="totalPlanCost">已规划 ¥{{ totalPlanCost.toLocaleString() }}</span>
-          <button class="schedule-btn" @click="scheduleDialog = true">＋ 提上日程</button>
+          <button class="schedule-btn" :disabled="scheduling" @click="addToSchedule('inspiration')">＋ {{ scheduling ? '保存中…' : '提上日程' }}</button>
         </div>
-        <el-dialog v-model="scheduleDialog" title="把这份计划放进你的旅行" width="420px">
-          <p class="schedule-copy">选择保存位置，之后可以继续编辑、补充照片和执行打卡。</p>
-          <div class="schedule-options">
-            <button :disabled="scheduling" @click="addToSchedule('inspiration')"><b>◎ 灵感目的地</b><small>以后去 · 保存想去的目的地和方案</small></button>
-            <button :disabled="scheduling" @click="addToSchedule('journey')"><b>◉ 我的旅程</b><small>即将去 · 创建可执行的旅行记录</small></button>
-          </div>
-        </el-dialog>
         <div class="decision-panel">
           <div><span class="decision-kicker">AI 旅行策略</span><strong>{{ travelStyle }} × {{ interests.length ? interests.join(' · ') : '综合体验' }}</strong></div>
           <p>每天安排 2–4 个核心地点，优先按区域串联；你可以直接按时间轴出发，也可以替换任意一个地点。</p>

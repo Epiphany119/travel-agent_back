@@ -52,21 +52,24 @@ function search() {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  width: min(1240px, 100%);
+  width: 100%;
   margin: 0 auto;
-  padding: 22px 28px 10px;
+  height: 54px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
 }
 
 /* 搜索胶囊（模板中的深绿圆角搜索条） */
 .search {
   flex: 1;
-  max-width: 420px;
+  max-width: 480px;
   display: flex;
   align-items: center;
   gap: 11px;
   background: var(--forest);
-  border-radius: 999px;
-  padding: 11px 20px;
+  border-radius: 8px;
+  padding: 8px 12px;
 
   svg {
     width: 16px;
@@ -103,7 +106,7 @@ function search() {
   font-weight: 800;
   font-size: 13px;
   padding: 11px 22px;
-  border-radius: 999px;
+  border-radius: 8px;
   cursor: pointer;
   box-shadow: 0 8px 18px rgba(45, 106, 79, 0.28);
   transition: transform 0.2s, box-shadow 0.2s;
@@ -146,7 +149,7 @@ function search() {
 }
 
 @media (max-width: 640px) {
-  .app-header { padding: 16px 18px 8px; }
+  .app-header { padding: 8px 12px; }
   .icon-btn { display: none; }
 }
 </style>
