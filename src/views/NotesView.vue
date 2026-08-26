@@ -68,6 +68,13 @@ function renderMarkdown(source: string): string {
     return '<div class="md-oversize" style="padding:16px;color:#8a9792;font-size:13px">' +
       '内容过长（' + source.length + ' 字符），已暂停实时渲染以保护编辑器性能；保存后仍完整保留。</div>'
   }
+  // 分割线兼容：md 中的 `---`/`***`/`___` 及带空格变体（`- - -`、`* * *` 等）
+  // 紧贴上一段时会被 CommonMark 解析成 setext 标题，导致分割线太浅或不显示。
+  // 渲染前给独立分隔线行前后补空行，强制按 <hr> 处理（不影响 #/## 标题语法）。
+  source = source.replace(
+    /^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm,
+    (m: string) => '\n\n' + m.trim() + '\n\n'
+  )
   try {
     const raw = md.render(source)
     // 为代码块提取语言，标注到 <pre> 上（用于显示语言角标 + 代码框）
@@ -940,12 +947,12 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
     >
       <!-- 面板工具条 -->
       <div class="left-toolbar">
-        <span class="left-toolbar-title">🗂 笔记列表</span>
         <button 
           class="panel-collapse-btn"
           title="收起左侧面板"
           @click="showLeftPanel = false"
         ><img class="panel-btn-icon" :src="panelBtnLeft" alt="收起左栏" /></button>
+        <span class="left-toolbar-title">🗂 笔记列表</span>
       </div>
 
       <div class="panel-toolbar">
@@ -1283,11 +1290,23 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 .sidebar-slide-left-enter-active,
 .sidebar-slide-left-leave-active,
 .sidebar-slide-right-enter-active,
-.sidebar-slide-right-leave-active { transition: transform .22s ease, opacity .18s ease; }
+.sidebar-slide-right-leave-active {
+  /* 宽度收缩/展开 + 淡出：flex 占位连续变化，中间内容平滑填充，不再瞬间跳变 */
+  transition: width .3s cubic-bezier(.4, 0, .2, 1), transform .3s ease, opacity .3s ease;
+  overflow: hidden;
+}
 .sidebar-slide-left-enter-from,
-.sidebar-slide-left-leave-to { transform: translateX(-18px); opacity: 0; }
+.sidebar-slide-left-leave-to {
+  width: 0 !important;
+  transform: translateX(-18px);
+  opacity: 0;
+}
 .sidebar-slide-right-enter-from,
-.sidebar-slide-right-leave-to { transform: translateX(18px); opacity: 0; }
+.sidebar-slide-right-leave-to {
+  width: 0 !important;
+  transform: translateX(18px);
+  opacity: 0;
+}
 
 /* 收起/展开按钮 */
 .panel-collapse-btn {
@@ -1320,10 +1339,16 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 }
 
 /* 左侧面板工具条（与右侧 right-toolbar 一致） */
+@keyframes restore-pop {
+  from { transform: scale(.72); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 .left-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 10px;
   padding: 8px 12px;
   border-bottom: 1px solid #e5e6e8;
   background: rgba(0, 0, 0, 0.02);
@@ -1333,9 +1358,10 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
     font-size: 12px;
     font-weight: 600;
     color: #8f959e;
+    white-space: nowrap;
   }
 
-  .panel-collapse-btn { width: 26px; height: 26px; }
+  .panel-collapse-btn { width: 26px; height: 26px; flex-shrink: 0; }
 }
 
 /* 工作台标识条 */
@@ -1375,6 +1401,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   position: absolute;
   left: 12px;
   top: 14px;
+  animation: restore-pop .22s ease;
   width: 36px;
   height: 36px;
   border: none;
@@ -1452,6 +1479,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   position: absolute;
   right: 12px;
   top: 14px;
+  animation: restore-pop .22s ease;
   width: 36px;
   height: 36px;
   border: none;
@@ -1636,7 +1664,8 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  /* 左右始终预留角落按钮空间：收起/展开时文字与按钮位置完全不变，零跳变 */
+  padding: 12px 68px;
   border-bottom: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
   border-radius: 18px 18px 0 0;
   gap: 16px;
@@ -1745,7 +1774,9 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  contain: layout paint;
 }
+
 
 .editor-area {
   flex: 1;
@@ -2259,9 +2290,12 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   }
 
   hr {
-    border: 0;
-    border-top: 1px solid #e5e6e8;
-    margin: 32px 0;
+    border: none;
+    height: 2px;
+    background: #6b737c;
+    border-radius: 1px;
+    margin: 32px 12px;
+    flex-shrink: 0;
   }
 
   /* 链接样式 - 指针光标 + hover 效果 */
