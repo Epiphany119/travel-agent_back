@@ -146,12 +146,13 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   margin: 8px 0 8px 8px;
   border-radius: 18px;
   position: sticky;
+  z-index: 10000;
   top: 0;
   display: flex;
   flex-direction: column;
   background: var(--forest);
   padding: 14px 8px;
-  overflow: visible;
+  overflow: visible;  /* 允许 tooltip 溢出显示 */
 }
 
 .brand {
@@ -213,8 +214,38 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
 }
 
 .menu-item .label { display: none; }
-.ico { position: relative; }
-.ico:hover::after { content: attr(aria-label); position: absolute; left: 34px; top: 50%; transform: translateY(-50%); white-space: nowrap; z-index: 1000; padding: 7px 10px; border-radius: 7px; background: var(--ink); color: var(--card); font-size: 12px; box-shadow: var(--shadow-soft); pointer-events:none; }
+.ico { 
+  position: relative;
+  z-index: 2;
+}
+
+/* 全局 tooltip 样式 - 使用 fixed 定位，确保不被任何容器裁剪 */
+.ico::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  z-index: 99999;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #1f2329;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .15s ease, visibility .15s ease;
+}
+
+.menu-item:hover .ico::after,
+.ico:hover::after {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
 
 .ico {
   width: 19px;

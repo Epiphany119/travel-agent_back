@@ -534,6 +534,137 @@ function startOutlineResize(e: PointerEvent) {
   document.addEventListener('pointerup', up)
   outlineResizeCleanup = up
 }
+
+// ─── 右侧面板 section 高度 & 上下拖拽 ────────────────────────
+const sectionHeights = reactive<Record<string, number | undefined>>({
+  theme: undefined,
+  outline: 200,
+  info: undefined,
+  shortcuts: undefined
+})
+
+const MIN_SECTION_HEIGHT = 44    // 压缩到这个高度以下 = 自动折叠
+const MAX_SECTION_HEIGHT = 800   // 绝对上限（防止极端情况）
+
+// section -> visible ref map for determining collapsed state
+const sectionVisibleRefs: Record<string, { value: boolean }> = {
+  theme: selectionThemeVisible,
+  outline: outlineVisible,
+  info: infoVisible,
+  shortcuts: shortcutsVisible
+}
+
+function getSectionHeightStyle(key: string) {
+  const visible = sectionVisibleRefs[key]?.value ?? true
+  // Collapsed state: let CSS class handle it (show only header)
+  if (!visible) return ''
+  // Expanded state: height stays auto (content-driven)
+  // Only when user explicitly resized, set max-height on body
+  const h = sectionHeights[key]
+  if (!h) return ''
+  // Set max-height on the section body via CSS var or inline style
+  return ''
+}
+
+// Apply height to section-body instead of section
+function getSectionBodyHeightStyle(key: string) {
+  const visible = sectionVisibleRefs[key]?.value ?? true
+  if (!visible) return ''
+  const h = sectionHeights[key]
+  if (!h) return ''
+  // Subtract header height (approx 44px)
+  const bodyHeight = Math.max(h - 44, 42)
+  return `max-height: ${bodyHeight}px;`
+}
+
+// 测量 section 的自然内容高度（展开状态下）
+function getNaturalHeight(el: HTMLElement): number {
+  const body = el.querySelector('.section-body') as HTMLElement | null
+  if (!body) return MIN_SECTION_HEIGHT
+  // 临时解除高度限制测量内容
+  const prev = { h: el.style.height, mh: el.style.maxHeight }
+  el.style.height = 'auto'
+  el.style.maxHeight = 'none'
+  const natural = Math.max(body.scrollHeight + 48, MIN_SECTION_HEIGHT) // +48 = header + padding
+  el.style.height = prev.h
+  el.style.maxHeight = prev.mh
+  return Math.min(natural, MAX_SECTION_HEIGHT)
+}
+
+function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: string) {
+  e.preventDefault()
+  e.stopPropagation()
+  const container = (e.currentTarget as HTMLElement).closest('.right-panel') as HTMLElement | null
+  if (!container) return
+
+  const beforeEl = container.querySelector(`[data-section="${beforeKey}"]`) as HTMLElement | null
+  const afterEl = container.querySelector(`[data-section="${afterKey}"]`) as HTMLElement | null
+  if (!beforeEl || !afterEl) return
+
+  const beforeStart = beforeEl.getBoundingClientRect().height
+  const afterStart = afterEl.getBoundingClientRect().height
+  const startY = e.clientY
+
+  // 记录自然高度作为上限参考
+  const naturalBefore = getNaturalHeight(beforeEl)
+  const naturalAfter = getNaturalHeight(afterEl)
+
+  let collapsedBefore = false
+  let collapsedAfter = false
+
+  const move = (ev: PointerEvent) => {
+    const delta = ev.clientY - startY
+
+    // 如果某一方已被折叠，阻止继续变化
+    if (collapsedBefore && collapsedAfter) return
+
+    // 拖拽方向修正：
+    //   向上拖 (delta < 0) → 上方面板变高，下方面板变矮
+    //   向下拖 (delta > 0) → 上方面板变矮，下方面板变高
+    let newBefore = beforeStart + delta   // 向上拖 → before 变矮
+    let newAfter = afterStart - delta     // 向上拖 → after 变高
+
+    // 压缩检测：低于最小高度 → 自动折叠
+    if (!collapsedBefore && newBefore <= MIN_SECTION_HEIGHT) {
+      collapsedBefore = true
+      sectionHeights[beforeKey] = undefined
+      if (sectionVisibleRefs[beforeKey]) {
+        sectionVisibleRefs[beforeKey].value = false
+      }
+      newBefore = 0
+    }
+    if (!collapsedAfter && newAfter <= MIN_SECTION_HEIGHT) {
+      collapsedAfter = true
+      sectionHeights[afterKey] = undefined
+      if (sectionVisibleRefs[afterKey]) {
+        sectionVisibleRefs[afterKey].value = false
+      }
+      newAfter = 0
+    }
+
+    // 不限制最大高度，用户可以自由拉高（内容多时内部滚动）
+    if (!collapsedBefore) {
+      newBefore = Math.max(newBefore, MIN_SECTION_HEIGHT)
+      sectionHeights[beforeKey] = Math.round(newBefore)
+    }
+    if (!collapsedAfter) {
+      newAfter = Math.max(newAfter, MIN_SECTION_HEIGHT)
+      sectionHeights[afterKey] = Math.round(newAfter)
+    }
+  }
+
+  const up = () => {
+    document.removeEventListener('pointermove', move)
+    document.removeEventListener('pointerup', up)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('pointermove', move)
+  document.addEventListener('pointerup', up)
+}
 </script>
 
 <template>
@@ -696,8 +827,8 @@ function startOutlineResize(e: PointerEvent) {
       class="right-panel"
       :style="{ width: rightPanelWidth + 'px', background: effectiveTheme.bg }"
     >
-      <!-- 面板收起条 -->
-      <div class="right-toolbar">
+      <!-- 面板收起条（固定在顶部） -->
+      <div class="right-panel-header">
         <span class="right-toolbar-title">📄 面板</span>
         <button 
           class="panel-collapse-btn"
@@ -706,13 +837,15 @@ function startOutlineResize(e: PointerEvent) {
         ><span class="panel-chevron" aria-hidden="true">›</span></button>
       </div>
 
+      <!-- 可滚动内容区 -->
+      <div class="right-panel-scroll">
       <!-- 主题设置 -->
-      <div class="panel-section">
+      <div class="panel-section" data-section="theme"  :class="{ collapsed: !selectionThemeVisible }">
         <div class="section-header" @click="selectionThemeVisible = !selectionThemeVisible">
           <span>🎨 主题设置</span>
           <span class="collapse-icon">{{ selectionThemeVisible ? '▼' : '▶' }}</span>
         </div>
-        <div class="section-body" v-if="selectionThemeVisible">
+        <div class="section-body" :style="getSectionBodyHeightStyle('theme')" v-if="selectionThemeVisible" :class="{ collapsed: !selectionThemeVisible }">
           <div class="theme-row">
             <label>背景色</label>
             <input type="color" v-model="theme.bg" />
@@ -746,13 +879,18 @@ function startOutlineResize(e: PointerEvent) {
         </div>
       </div>
 
+      <!-- 上下拖拽分割线 -->
+      <div 
+        class="section-drag-handle" 
+        @pointerdown="onSectionResizeStart($event, 'theme', 'outline')"
+      ></div>
       <!-- 大纲 -->
-      <div class="panel-section" v-if="outline.length > 0">
+      <div class="panel-section" data-section="outline"  :class="{ collapsed: !outlineVisible }" v-if="outline.length > 0">
         <div class="section-header" @click="outlineVisible = !outlineVisible">
           <span>📑 大纲目录</span>
           <span class="collapse-icon">{{ outlineVisible ? '▼' : '▶' }}</span>
         </div>
-        <div class="section-body outline" v-if="outlineVisible" :style="{ height: outlinePanelHeight + 'px' }">
+        <div class="section-body" :style="getSectionBodyHeightStyle('outline')" v-if="outlineVisible">
           <div 
             v-for="(item, idx) in outline" 
             :key="idx"
@@ -766,36 +904,46 @@ function startOutlineResize(e: PointerEvent) {
         </div>
       </div>
 
+      <!-- 上下拖拽分割线 -->
+      <div 
+        class="section-drag-handle" 
+        @pointerdown="onSectionResizeStart($event, 'outline', 'info')"
+      ></div>
       <!-- 文档信息 -->
-      <div class="panel-section" v-if="curDoc.id">
+      <div class="panel-section" data-section="info"  :class="{ collapsed: !infoVisible }" v-if="curDoc.id">
         <div class="section-header" @click="infoVisible = !infoVisible">
           <span>📄 文档信息</span>
           <span class="collapse-icon">{{ infoVisible ? '▼' : '▶' }}</span>
         </div>
-        <div class="section-body info" v-if="infoVisible">
+        <div class="section-body" :style="getSectionBodyHeightStyle('info')" v-if="infoVisible">
           <div class="info-row">
-            <span>字数</span>
+            <span>字数：</span>
             <b>{{ wordCount }}</b>
           </div>
           <div class="info-row">
-            <span>最后编辑</span>
+            <span>最后编辑：</span>
             <b>{{ displayTime }}</b>
           </div>
           <div class="info-row">
-            <span>状态</span>
+            <span>状态：</span>
             <b>草稿</b>
           </div>
           <button class="danger-btn" @click="removeDoc">🗑 删除笔记</button>
         </div>
       </div>
 
+      <!-- 上下拖拽分割线 -->
+      <div 
+        class="section-drag-handle" 
+        @pointerdown="onSectionResizeStart($event, 'info', 'shortcuts')"
+      ></div>
       <!-- 快捷键提示 -->
-      <div class="panel-section">
+      <div class="panel-section" data-section="shortcuts"  :class="{ collapsed: !shortcutsVisible }">
         <div class="section-header" @click="shortcutsVisible = !shortcutsVisible">
           <span>⌨️ 快捷键</span>
           <span class="collapse-icon">{{ shortcutsVisible ? '▼' : '▶' }}</span>
         </div>
-        <div class="section-body shortcuts" v-if="shortcutsVisible">
+        <div class="section-body" :style="getSectionBodyHeightStyle('shortcuts')" v-if="shortcutsVisible">
           <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</div>
           <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>E</kbd> 切换预览</div>
           <div class="shortcut-row"><kbd>Ctrl</kbd>+<kbd>B</kbd> 显示/隐藏右侧</div>
@@ -803,6 +951,7 @@ function startOutlineResize(e: PointerEvent) {
 
         </div>
       </div>
+      </div>  <!-- /.right-panel-scroll -->
     </aside>
     </Transition>
 
@@ -835,12 +984,14 @@ function startOutlineResize(e: PointerEvent) {
   --line: #E7E0D2;
   position: relative;
   display: flex;
+  align-items: stretch;             /* 让所有子元素自动拉伸到全高 */
   height: 100vh;
   overflow: hidden;
   min-width: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   background: var(--notes-bg, #ffffff);
   color: var(--notes-fg, #1f2329);
+  padding: 0;
 }
 
 .system-theme-check {
@@ -858,6 +1009,7 @@ function startOutlineResize(e: PointerEvent) {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;                   /* 允许 flex 子项正确计算溢出 */
   border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
   border-radius: 18px;
   margin: 8px 0 8px 8px;
@@ -977,22 +1129,50 @@ function startOutlineResize(e: PointerEvent) {
 }
 
 /* 右侧面板收起工具条 */
-.right-toolbar {
+/* 面板标题栏（固定在顶部，不滚动） */
+.right-panel-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 4px 4px 12px;
+  background: var(--notes-bg, #fafafa);
   border-bottom: 1px solid #e5e6e8;
-  background: rgba(0, 0, 0, 0.02);
-  flex-shrink: 0;
+  margin-bottom: 8px;
+  z-index: 5;
 
   .right-toolbar-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: #8f959e;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--notes-fg, #1f2329);
   }
 
   .panel-collapse-btn { width: 26px; height: 26px; }
+}
+
+/* 可滚动内容区 */
+.right-panel-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;                     /* 关键：允许 flex 子项收缩以触发滚动 */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 16px;              /* 底部留白 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,.2) transparent;
+}
+
+.right-panel-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.right-panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.2);
+  border-radius: 3px;
+}
+.right-panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* 右栏收起后的展开按钮 */
@@ -1112,43 +1292,51 @@ function startOutlineResize(e: PointerEvent) {
   color: #8f959e;
 }
 
-/* ─── 拖拽手柄（修复版） ─────────────────────────────────── */
+/* ─── 拖拽手柄（与面板内部分割线统一：1px #e5e6e8 细线） ─── */
 .drag-handle {
-  width: 12px;
+  width: 14px;
   flex-shrink: 0;
   cursor: col-resize;
   background: transparent;
   position: relative;
-  z-index: 10;
+  z-index: 100;                     /* 关键：高于 right-panel 的 z-index */
   pointer-events: auto;
   user-select: none;
   touch-action: none;
 
+  /* 热区：向上向下扩展，与右侧面板同高 */
   &::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    bottom: -8px;
+    left: 0;
+    right: 0;
+  }
+
+  /* 默认态：中间一条细线 */
+  &::after {
     content: '';
     position: absolute;
     top: 0;
     bottom: 0;
-    left: -8px;
-    right: -8px;
-  }
-
-  &::after {
-    content: '';
-    position: absolute;
-    top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
-    width: 4px;
-    height: 72px;
-    border-radius: 999px;
-    background: rgba(31,35,41,.18);
-    transition: background .15s;
+    transform: translateX(-50%);
+    width: 2px;
+    background: #d5d8dc;
+    transition: background .15s, width .15s;
   }
 
-  &:hover::after { background: var(--notes-accent, #3370ff); box-shadow: 0 0 0 4px color-mix(in srgb, var(--notes-accent, #3370ff) 14%, transparent); }
-  &:active { background: rgba(51, 112, 255, 0.05); }
-  &:active::after { background: #3370ff; }
+  &:hover::after {
+    width: 3px;
+    background: var(--notes-accent, #3370ff);
+  }
+
+  &:active::after {
+    width: 4px;
+    background: var(--notes-accent, #3370ff);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--notes-accent, #3370ff) 14%, transparent);
+  }
 }
 
 .left-handle { margin-left: -1px; }
@@ -1160,6 +1348,7 @@ function startOutlineResize(e: PointerEvent) {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;                   /* 允许 flex 子项正确计算溢出 */
   overflow: hidden;
   background: var(--notes-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
@@ -1363,21 +1552,143 @@ function startOutlineResize(e: PointerEvent) {
   font-size: 14px;
 }
 
-/* ─── 右侧面板 ─────────────────────────────────── */
+/* ─── 右侧面板（卡片式布局，每个 section 独立成卡片） ────────────────── */
 .right-panel {
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  width: 300px;
   display: flex;
   flex-direction: column;
+  min-height: 0;                   /* 关键：允许 flex 子项正确计算溢出 */
+  box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
   border-radius: 18px;
+  padding: 12px;
   margin: 8px 8px 8px 0;
   box-shadow: -4px 0 18px rgba(31,35,41,.10);
-  overflow-y: auto;
+  overflow: hidden;                /* 裁剪溢出，由内部 scroll 容器处理滚动 */
   background: var(--notes-bg, #fafafa);
+  position: relative;
+  z-index: 2;
 }
 
+.right-panel::-webkit-scrollbar {
+  width: 6px;
+}
+.right-panel::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.2);
+  border-radius: 3px;
+}
+.right-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 每个 section 独立成卡片 */
 .panel-section {
-  border-bottom: 1px solid #e5e6e8;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  min-height: 48px;
+  background: var(--card, #ffffff);
+  border: 1px solid #e5e6e8;
+  border-radius: 12px;
+  overflow: visible;              /* 允许内容溢出显示 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+/* 折叠状态：只保留 header，隐藏 body */
+.panel-section.collapsed {
+  max-height: 46px !important;   /* 只显示 header 的高度 */
+  overflow: hidden;
+}
+
+.panel-section.collapsed .section-header {
+  border-bottom: 0;
+}
+
+.panel-section.collapsed .section-body {
+  display: none;
+}
+
+/* section 之间的上下拖拽把手 */
+.section-drag-handle {
+  height: 14px;                  /* 增加高度，间距更宽 */
+  margin: 2px 0;
+  cursor: row-resize;
+  position: relative;
+  flex-shrink: 0;
+  user-select: none;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+
+  /* 中心拖拽条（灰色） */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 3px;
+    border-radius: 2px;
+    background: #c5c9cf;
+    transition: background .15s, height .15s;
+  }
+
+  /* 左侧强调色短线 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 18px;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--notes-accent, #3370ff);
+    transition: width .2s;
+  }
+
+  &:hover::before {
+    background: var(--notes-accent, #3370ff);
+    height: 4px;
+  }
+  &:hover::after { width: 40px; }
+
+  &:active::before,
+  &:active::after {
+    background: var(--notes-accent, #3370ff);
+  }
+}
+
+/* 折叠状态：只保留 header，隐藏 body */
+.panel-section.collapsed {
+  max-height: 46px !important;   /* 只显示 header 的高度 */
+  overflow: hidden;
+}
+
+.panel-section.collapsed .section-header {
+  border-bottom: 0;
+}
+
+.panel-section.collapsed .section-body {
+  display: none;
+}
+
+/* section 之间的上下拖拽把手 */
+.section-resize {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+/* 可拖拽的 section-body（flex:1 让它填充剩余空间） */
+.panel-section .section-body {
+  flex: 1 1 auto;
+  overflow: auto;
 }
 
 .section-header {
@@ -1389,38 +1700,27 @@ function startOutlineResize(e: PointerEvent) {
   font-weight: 600;
   cursor: pointer;
   color: inherit;
+  border-bottom: 1px solid #eef0f2;   /* 卡片内 header 与 body 的分隔 */
+  background: #fafbfc;
 
-  &:hover { background: #f5f6f7; }
+  &:hover { background: #f0f2f4; }
 }
 
 .collapse-icon { font-size: 10px; color: #8f959e; }
 
 .section-body {
   position: relative;
+  flex: 0 0 auto;                  /* 不拉伸不压缩，按内容高度 */
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 42px;
-  max-height: 52vh;
-  overflow: auto;
-  resize: vertical;
+  max-height: none;                /* 不限制最大高度 */
+  overflow: visible;               /* 内容超出时显示（由父容器滚动） */
+  background: transparent;         /* 透明，用 section 背景 */
 }
-.section-body.outline { min-height: 180px; resize: vertical; }
-.section-resize-handle {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -7px;
-  height: 14px;
-  z-index: 5;
-  cursor: row-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.section-resize-handle span { width: 42px; height: 3px; border-radius: 3px; background: transparent; transition: background .15s; }
-.section-resize-handle:hover span, .section-resize-handle:active span { background: var(--notes-accent, #3370ff); }
+.section-body.outline { min-height: 120px; overflow-y: auto; max-height: 60vh; }
 
 /* 主题设置 */
 .theme-row {
@@ -1500,13 +1800,32 @@ function startOutlineResize(e: PointerEvent) {
 .info {
   .info-row {
     display: flex;
+    align-items: center;
     justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    margin: 4px 0;
+    background: #f7f8fa;
+    border-radius: 8px;
     font-size: 13px;
-    padding: 6px 0;
+    line-height: 1.5;
 
-    span { color: #646a73; }
-    b { color: inherit; font-weight: 500; }
+    &:last-of-type { margin-bottom: 8px; }
+    
+    span {
+      color: #8c99a8;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+    }
+    
+    b { 
+      font-weight: 600; 
+      color: #1f2329;
+      font-size: 14px;
+    }
   }
+    b { color: inherit; font-weight: 500; }
 }
 
 .danger-btn {

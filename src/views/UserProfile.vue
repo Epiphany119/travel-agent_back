@@ -353,10 +353,13 @@ onMounted(() => { loadSystemPalette(); load() })
           </div>
 
           <h2>{{ form.name || '旅人' }}</h2>
-          <p class="email">
-            <span v-if="form.email">{{ form.email }}</span>
-            <span v-else class="email-unbound">未绑定邮箱</span>
-          </p>
+          <div class="contact-info">
+            <p class="email">
+              <span v-if="form.email">{{ form.email }}</span>
+              <span v-else class="email-unbound">未绑定邮箱</span>
+            </p>
+            <p v-if="form.phone" class="phone">📱 {{ form.phone }}</p>
+          </div>
 
           <div class="stat-row">
             <div class="stat">
@@ -374,6 +377,7 @@ onMounted(() => { loadSystemPalette(); load() })
           </div>
         </div>
 
+        <div class="card-body">
         <div class="card-form">
           <h5 class="sec-label">基本信息</h5>
           <el-form label-position="top" class="basic">
@@ -474,6 +478,14 @@ onMounted(() => { loadSystemPalette(); load() })
             </svg>
             退出登录
           </button>
+        </div>
+
+        <!-- 保存按钮：卡片底部固定 -->
+        <div class="card-footer">
+          <button class="save-btn" :disabled="saving" @click="save">
+            {{ saving ? '保存中…' : '保存资料' }}
+          </button>
+        </div>
         </div>
       </aside>
 
@@ -591,17 +603,21 @@ onMounted(() => { loadSystemPalette(); load() })
       </section>
     </div>
 
-    <div class="savebar">
-      <button class="save-btn" :disabled="saving" @click="save">
-        {{ saving ? '保存中…' : '保存资料' }}
-      </button>
-    </div>
   </main>
 </template>
 
 <style scoped lang="scss">
-.shell { min-height: 100vh; padding-bottom: 90px; }
-.profile-head { width: min(1160px, calc(100% - 40px)); margin: 24px auto 26px; }
+.shell { 
+  padding: 16px 20px; 
+  height: 100vh; 
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.profile-head { 
+  flex-shrink: 0; 
+  margin-bottom: 16px;
+}
 .palette-panel { position: relative; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .palette-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-weight: 800; cursor: pointer; }
 .palette-trigger span { color: var(--ink-2); font-size: 12px; font-weight: 600; }
@@ -623,9 +639,66 @@ onMounted(() => { loadSystemPalette(); load() })
 .profile-head h1 { font: 34px "DM Serif Display", "Noto Sans SC"; color: var(--ink); margin: 0; }
 .sub { color: #687873; font-size: 14px; margin: 10px 0 0; }
 
-.layout { width: min(1160px, calc(100% - 40px)); margin: auto; display: grid; grid-template-columns: 320px 1fr; gap: 24px; align-items: start; }
+.layout { 
+  width: calc(100% - 40px); 
+  max-width: 1160px;
+  margin: 0 auto; 
+  flex: 1; min-height: 0;
+  display: grid; 
+  grid-template-columns: 320px 1fr; 
+  gap: 24px; 
+  align-items: stretch;
+  overflow: hidden;
+}
 
-.profile-card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; box-shadow: 0 2px 4px rgba(22,78,66,.05); }
+/* 左：用户资料卡片 - 固定高度，内部滚动 */
+.profile-card {
+  height: 100%;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 2px 4px rgba(22,78,66,.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 卡片头 - 固定 */
+.profile-card .card-hero { flex-shrink: 0; }
+
+/* 卡片内容区 - 可滚动 */
+.profile-card .card-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 右：旅行偏好面板 - 固定高度，内部滚动 */
+.panel.prefs {
+  height: 100%;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 4px rgba(22,78,66,.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 面板头部 - 固定 */
+.panel.prefs > .prefs-head,
+.panel.prefs > .palette-panel { flex-shrink: 0; }
+
+/* 面板表单 - 可滚动 */
+.panel.prefs > .el-form,
+.panel.prefs > form {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 .card-hero { padding: 30px 26px 22px; text-align: center; background: radial-gradient(160% 120% at 50% 10%, var(--roam-soft) 0%, var(--card) 55%); }
 .avatar-ring { width: 130px; height: 130px; margin: 0 auto 14px; border-radius: 50%; padding: 5px; background: var(--forest); box-shadow: 0 8px 28px rgba(22,78,66,.22), 0 0 0 10px rgba(79,143,120,.12); }
 .avatar-uploader { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: #fff; cursor: pointer; transition: .3s; }
@@ -638,6 +711,63 @@ onMounted(() => { loadSystemPalette(); load() })
 .email-unbound { color: var(--sunset); font-weight: 600; }
 .preview-box { text-align: center; margin: -6px 0 12px; }
 .preview-box img { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; border: 2px solid var(--roam); }
+/* 卡片内滚动区域样式 */
+.card-body,
+.panel.prefs > .el-form {
+  scrollbar-width: thin;
+  scrollbar-color: #d5d8dc transparent;
+}
+
+.card-body::-webkit-scrollbar,
+.panel.prefs > .el-form::-webkit-scrollbar {
+  width: 6px;
+}
+
+.card-body::-webkit-scrollbar-thumb,
+.panel.prefs > .el-form::-webkit-scrollbar-thumb {
+  background: #d5d8dc;
+  border-radius: 3px;
+}
+
+/* 卡片底部保存区 */
+.card-footer {
+  flex-shrink: 0;
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.02) 100%);
+}
+
+/* 联系方式区（邮箱 + 手机号） */
+.contact-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 16px;
+}
+
+.contact-info .email {
+  color: #8a9792;
+  font-size: 13px;
+  margin: 0;
+}
+
+.contact-info .phone {
+  color: #6b7280;
+  font-size: 12px;
+  margin: 0;
+}
+
+.contact-info .email-unbound {
+  color: var(--sunset);
+  font-weight: 600;
+}
+
+.card-body::-webkit-scrollbar-track,
+.panel.prefs > .el-form::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .row-btn { margin-top: 8px; display: flex; justify-content: center; gap: 8px; }
 
 .stat-row { display: flex; border-top: 1px solid var(--line); padding-top: 18px; }
@@ -726,7 +856,7 @@ onMounted(() => { loadSystemPalette(); load() })
 .logout-btn { width: 100%; margin-top: 16px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--ink-2); font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s; }
 .logout-btn:hover { background: var(--wash); border-color: var(--ink-3); color: var(--ink); }
 
-.panel { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 26px 28px; box-shadow: 0 2px 4px rgba(22,78,66,.05); }
+
 .prefs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .prefs-head h3 { color: var(--ink); margin: 0; font-size: 20px; }
 .prefs .badge { background: var(--roam-soft); color: var(--forest); font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 24px; }
@@ -735,8 +865,21 @@ onMounted(() => { loadSystemPalette(); load() })
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 
-.savebar { width: min(1160px, calc(100% - 40px)); margin: 26px auto 0; display: flex; justify-content: flex-end; }
-.save-btn { border: 0; background: var(--forest); color: #fff; font-weight: 800; padding: 14px 34px; border-radius: 13px; cursor: pointer; box-shadow: 0 10px 20px rgba(22,78,66,.18); }
+
+.save-btn { 
+  border: 0; 
+  background: var(--forest); 
+  color: #fff; 
+  font-weight: 800; 
+  padding: 12px 28px; 
+  border-radius: 12px; 
+  cursor: pointer; 
+  box-shadow: 0 4px 12px rgba(22,78,66,.15);
+  width: 100%;
+  transition: all .15s;
+  
+  &:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(22,78,66,.2); }
+}
 .save-btn:disabled { opacity: .65; cursor: not-allowed; }
 
 @media (max-width: 800px) {

@@ -84,7 +84,7 @@ body {
   display: flex;
   height: 100vh;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .app-main {
@@ -93,7 +93,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .app-main > *:not(.app-header) { border-radius: 18px 0 0 0; }
