@@ -78,13 +78,13 @@ export function copyTravelNote(id: number) { return request.post<unknown, ApiRes
 export function getSharedTravelNote(token: string) { return request.get<unknown, ApiResult<TravelNote>>('/user/travel-notes/share/' + token) }
 export function deleteTravelNote(id: number) { return request.delete<unknown, ApiResult<unknown>>('/user/travel-notes/' + id) }
 export function searchUsers(q: string) { return request.get<unknown, ApiResult<any[]>>('/user/users/search', { params: { q } }) }
-export function listPublicNotes(page=0, size=20) { return request.get<unknown, ApiResult<any[]>>('/user/social/notes', { params: { page, size } }) }
+export function listPublicNotes(page=0, size=20, q?: string, tag?: string) { return request.get<unknown, ApiResult<any[]>>('/user/social/notes', { params: { page, size, q, tag } }) }
 export function getPublicNote(id: number) { return request.get<unknown, ApiResult<any>>('/user/social/notes/' + id) }
 export function reactNote(id: number, type: 'like'|'favorite') { return request.post('/user/social/notes/' + id + '/reaction', null, { params: { type, userId: getCurrentUserId() } }) }
 export function listComments(id: number) { return request.get<unknown, ApiResult<any[]>>('/user/social/notes/' + id + '/comments') }
 export function addComment(id: number, content: string) { return request.post('/user/social/notes/' + id + '/comments', { content }, { params: { userId: getCurrentUserId() } }) }
 export function requestFriend(id: string, message='') { return request.post('/user/users/' + id + '/friend-request', { message }, { params: { from: getCurrentUserId() } }) }
-export function publishSocialNote(data: { userId: string; travelNoteId?: number; title: string; content: string; coverUrl?: string }) { return request.post('/user/social/notes', data) }
+export function publishSocialNote(data: { userId: string; travelNoteId?: number; title: string; content: string; coverUrl?: string; destination?: string; tags?: string[]; authorName?: string; authorAvatar?: string }) { return request.post('/user/social/notes', data) }
 export function saveJourneyPoints(journeyId: number, points: JourneyPoint[]) {
   return request.post<unknown, ApiResult<unknown>>(`/user/journeys/${journeyId}/points`, points)
 }

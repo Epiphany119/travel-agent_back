@@ -2,9 +2,9 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentTabsStore } from '@/stores/contentTabs'
-import { listInspirations, type Inspiration } from '@/api/user'
-const router = useRouter(); const query = ref(''); const active = ref('为你推荐'); const tabs = ['为你推荐','城市灵感','AI 路线','避坑经验']; const inspirations = ref<Inspiration[]>([])
-const notes = [
+import { listInspirations, listPublicNotes, type Inspiration } from '@/api/user'
+const router = useRouter(); const query = ref(''); const active = ref('为你推荐'); const tabs = ['为你推荐','城市灵感','AI 路线','避坑经验']; const inspirations = ref<Inspiration[]>([]); const notes = ref<any[]>([])
+const legacyNotes = [
   { title:'杭州 3 日慢旅行｜把西湖留给清晨', author:'Kao', city:'杭州', likes:'2.4k', image:'https://images.unsplash.com/photo-1536599018102-9f803c3e0a2a?auto=format&fit=crop&w=900&q=80', tags:['轻松漫游','人文'], content:'Day 1：抵达后入住西湖边的民宿，清晨错峰逛苏堤。\nDay 2：灵隐寺 + 龙井村徒步，感受茶山。\nDay 3：九溪烟树慢走，再喝一杯桂花龙井收尾。' },
   { title:'珠海周末不踩雷：海边、老街和一顿好吃的', author:'Momo', city:'珠海', likes:'1.8k', image:'https://images.unsplash.com/photo-1507521292222-0f3f9d4e5d3d?auto=format&fit=crop&w=900&q=80', tags:['周末','美食'], content:'Day 1：情侣路骑车看海，傍晚去湾仔吃生蚝。\nDay 2：唐家湾老街散步，挖掘本地糖水铺与咖啡店。' },
   { title:'川西 7 天｜把海拔和体力写进计划', author:'山野来信', city:'川西', likes:'986', image:'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=900&q=80', tags:['自驾','户外'], content:'Day 1：成都出发，适应海拔，住康定。\nDay 2-3：新都桥、塔公草原，边走边拍。\nDay 4-5：稻城亚丁深度徒步。\nDay 6-7：回程，留缓冲应对高反。' },
@@ -46,7 +46,14 @@ function openInspiration(item: Inspiration) {
   })
   router.push('/card-detail')
 }
-onMounted(async()=>{try{inspirations.value=(await listInspirations()).data||[]}catch{}})
+function normalizeNote(note: any) {
+  const tags = Array.isArray(note.tags) ? note.tags : typeof note.tags === 'string' ? (() => { try { return JSON.parse(note.tags) } catch { return note.tags.split(',').filter(Boolean) } })() : []
+  return { ...note, author: note.author || note.userId || note.user_id || '旅行者', city: note.destination || '', image: note.coverUrl || note.cover_url || '', likes: note.likeCount ?? note.like_count ?? 0, tags }
+}
+onMounted(async()=>{
+  try { notes.value = ((await listPublicNotes()).data || []).map(normalizeNote) } catch { notes.value = legacyNotes }
+  try { inspirations.value=(await listInspirations()).data||[] } catch {}
+})
 </script>
 <template>
  <main class="explore-page"><header class="explore-head"><div><p class="eyebrow">DISCOVER YOUR NEXT ROAM</p><h1>发现下一段旅程</h1><p class="sub">真实经验、可执行路线，以及可以直接交给 Roamly 的灵感。</p></div><button class="profile-pill" @click="router.push('/profile')">我的主页 <span>→</span></button></header>
@@ -54,7 +61,7 @@ onMounted(async()=>{try{inspirations.value=(await listInspirations()).data||[]}c
  <nav class="feed-tabs"><button v-for="tab in tabs" :key="tab" :class="{active:active===tab}" @click="active=tab">{{tab}}</button></nav>
  <section class="ai-callout"><div class="ai-symbol">✦</div><div><span class="eyebrow">ROAMLY AI PLANNER</span><h2>不知道去哪玩？把一句想法变成完整行程。</h2><p>“8 月，想去海边，预算 5000，两个人，节奏别太赶。”</p></div><button @click="router.push('/')">开始规划 <span>→</span></button></section>
  <section class="section-head"><div><span class="eyebrow">TRAVEL NOTES</span><h2>今日热门旅行</h2></div><button class="text-btn">查看全部 →</button></section>
- <section class="feed-grid"><article v-for="note in notes" :key="note.title" class="note-card" @click="openNote(note)"><div class="note-cover"><img :src="note.image" :alt="note.city" loading="lazy"/><span class="save">☆</span><div class="hover-open">查看并编辑 →</div></div><div class="note-body"><div class="note-author"><span class="avatar">{{note.author.charAt(0)}}</span><span>{{note.author}}</span><span class="dot">·</span><span>{{note.city}}</span></div><h3>{{note.title}}</h3><div class="tag-row"><span v-for="tag in note.tags" :key="tag">{{tag}}</span></div><div class="note-meta"><span>♡ {{note.likes}}</span><span>◌ 旅行笔记</span></div></div></article><article v-for="item in inspirations" :key="'i'+item.id" class="note-card" @click="openInspiration(item)"><div class="note-cover note-cover--fallback"><span>{{item.name}}</span><div class="hover-open">查看并编辑 →</div></div><div class="note-body"><div class="note-author"><span class="avatar">✦</span><span>Roamly 灵感</span></div><h3>{{item.quote || item.description || ('想去 '+item.name+' 看看')}}</h3><div class="tag-row"><span>{{item.bestSeason || '旅行灵感'}}</span></div></div></article></section>
+ <section class="feed-grid"><article v-for="note in notes" :key="note.id || note.title" class="note-card" @click="openNote(note)"><div class="note-cover"><img :src="note.image" :alt="note.city" loading="lazy"/><span class="save">☆</span><div class="hover-open">查看并编辑 →</div></div><div class="note-body"><div class="note-author"><span class="avatar">{{note.author.charAt(0)}}</span><span>{{note.author}}</span><span class="dot">·</span><span>{{note.city}}</span></div><h3>{{note.title}}</h3><div class="tag-row"><span v-for="tag in note.tags" :key="tag">{{tag}}</span></div><div class="note-meta"><span>♡ {{note.likes}}</span><span>◌ 旅行笔记</span></div></div></article><article v-for="item in inspirations" :key="'i'+item.id" class="note-card" @click="openInspiration(item)"><div class="note-cover note-cover--fallback"><span>{{item.name}}</span><div class="hover-open">查看并编辑 →</div></div><div class="note-body"><div class="note-author"><span class="avatar">✦</span><span>Roamly 灵感</span></div><h3>{{item.quote || item.description || ('想去 '+item.name+' 看看')}}</h3><div class="tag-row"><span>{{item.bestSeason || '旅行灵感'}}</span></div></div></article></section>
  <section class="creator-strip"><div><span class="eyebrow">MAKE IT YOURS</span><h2>你的旅行，值得被认真记录。</h2><p>生成一份计划，出发后变成一篇可分享的旅行笔记。</p></div><button @click="router.push('/agent-panel')">和 Agent 一起开始 <span>→</span></button></section></main>
 </template>
 <style scoped>

@@ -288,7 +288,6 @@ onUnmounted(() => {
   min-width: 360px;
   max-width: 520px;
   min-height: 0;
-  height: 0;             /* ★ 关键：压到 0 让 flex-grow 接管 */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -298,7 +297,6 @@ onUnmounted(() => {
   flex: 1 1 0%;
   min-width: 0;
   min-height: 0;
-  height: 0;             /* ★ 关键：把高度压到 0，让 flex-grow 接管 → 保证不会撑出去 */
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
