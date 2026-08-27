@@ -6,10 +6,13 @@ import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { listNotes, getNote, createNote, updateNote, deleteNote, uploadNoteImage,
           getNoteUserId, type NoteDocument } from '@/api/note'
+import { publishSocialNote } from '@/api/user'
+import { useUserStore } from '@/stores/user'
 import panelBtnLeft from '@/assets/侧边栏按钮-左.png'
 import panelBtnRight from '@/assets/侧边栏按钮-右.png'
 import { useRightPanelStore } from '@/stores/rightPanel'
 import { getPreferences } from '@/api/user'
+import { parseSystemPalette } from '@/utils/theme'
 
 // ─── Markdown 引擎 ──────────────────────────────────────
 const md = new MarkdownIt({
@@ -103,7 +106,7 @@ function renderMarkdown(source: string): string {
     html = html.replace(/\stitle="w=\d+"/g, '')
     return DOMPurify.sanitize(html, {
       ADD_TAGS: ['img', 'hr', 'input', 'figure', 'figcaption'],
-      ADD_ATTR: ['contenteditable', 'draggable', 'data-note-id', 'data-link', 'width', 'title']
+      ADD_ATTR: ['contenteditable', 'draggable', 'data-note-id', 'data-link', 'width', 'title', 'style', 'loading', 'target', 'rel']
     })
   } catch {
     return source
@@ -125,6 +128,9 @@ const liveEditorRef = ref<HTMLElement | null>(null)
 const themePopoverVisible = ref(false)
 const showPreview = ref(true)
 const isEditorMode = ref(false)
+const dirty = ref(false)
+const published = ref(false)
+const userStore = useUserStore()
 
 // 全局右侧面板
 const rightPanel = useRightPanelStore()
@@ -145,7 +151,8 @@ const theme = reactive({
   fg: '#1f2329',
   accent: '#3370ff'
 })
-const useSystemTheme = ref(false)
+// 系统主题是笔记编辑器的默认主题；只有用户明确关闭时才使用单篇笔记主题。
+const useSystemTheme = ref(true)
 const systemTheme = reactive({ bg: '#F7F3EA', fg: '#1D2B27', accent: '#164E42' })
 const effectiveTheme = computed(() => useSystemTheme.value ? systemTheme : theme)
 
@@ -168,6 +175,8 @@ function applyTheme() {
   root.style.setProperty('--notes-bg', effectiveTheme.value.bg)
   root.style.setProperty('--notes-fg', effectiveTheme.value.fg)
   root.style.setProperty('--notes-accent', effectiveTheme.value.accent)
+  root.style.setProperty('--notes-line', `color-mix(in srgb, ${effectiveTheme.value.fg} 15%, ${effectiveTheme.value.bg})`)
+  root.style.setProperty('--notes-wash', `color-mix(in srgb, ${effectiveTheme.value.bg} 88%, ${effectiveTheme.value.fg} 12%)`)
 }
 watch([theme, systemTheme, useSystemTheme], applyTheme, { deep: true })
 
@@ -188,15 +197,14 @@ function loadThemeFromJson(jsonStr?: string) {
     if (saved.bg) theme.bg = saved.bg
     if (saved.fg) theme.fg = saved.fg
     if (saved.accent) theme.accent = saved.accent
-    useSystemTheme.value = saved.useSystemTheme === true
+    useSystemTheme.value = saved.useSystemTheme !== false
   } catch {}
 }
 
 async function loadSystemTheme() {
   try {
     const result = await getPreferences()
-    const saved = result.data?.systemThemeJson ? JSON.parse(result.data.systemThemeJson) : {}
-    Object.assign(systemTheme, { bg: saved.bg || systemTheme.bg, fg: saved.fg || systemTheme.fg, accent: saved.accent || systemTheme.accent })
+    Object.assign(systemTheme, parseSystemPalette(result.data?.systemThemeJson))
     applyTheme()
   } catch {}
 }
@@ -267,15 +275,17 @@ async function openDoc(id: number) {
     curDoc.content = d.content || ''
 
     editorContent.value = d.content || ''
+    dirty.value = false
+    published.value = false
 
     if (d.themeJson) loadThemeFromJson(d.themeJson)
   } catch (e: any) { ElMessage.error(e?.message || '打开失败') }
 }
 
 // ─── 保存笔记 ────────────────────────────────────────────
-async function saveDoc(silent = false) {
+async function saveDoc(silent = false): Promise<NoteDocument | undefined> {
   syncLiveEditor()
-  if (currentId.value == null) { await addDoc(); return }
+  if (currentId.value == null) { await addDoc(); return undefined }
   saving.value = true
   try {
     const payload = {
@@ -291,11 +301,42 @@ async function saveDoc(silent = false) {
     curDoc.updatedAt = d.updatedAt || new Date().toISOString().replace('Z', '')
     curDoc.content = editorContent.value
     curDoc.themeJson = d.themeJson || themeToJson()
+    dirty.value = false
     docs.value = await listNotes()
+    return d
   } catch (e: any) {
     console.error('Save failed:', e)
     ElMessage.error(e?.message || '保存失败')
   } finally { saving.value = false }
+}
+
+/** 把当前文档发布到社区；内容仍保留在 note_document，社区只保存可展示快照。 */
+async function publishCurrentNote() {
+  if (currentId.value == null) return ElMessage.info('请先选择一篇笔记')
+  syncLiveEditor()
+  if (!curDoc.title?.trim()) return ElMessage.warning('请先填写笔记标题')
+  if (!editorContent.value.trim()) return ElMessage.warning('正文不能为空')
+  saving.value = true
+  try {
+    const saved = await saveDoc(true)
+    if (currentId.value != null && !saved) return
+    await publishSocialNote({
+      userId: currentUserId.value,
+      title: curDoc.title.trim(),
+      content: editorContent.value,
+      coverUrl: curDoc.coverUrl || '',
+      destination: curDoc.destination || '',
+      tags: curDoc.destination ? [curDoc.destination] : [],
+      authorName: userStore.nickname || '旅行者'
+    })
+    published.value = true
+    dirty.value = false
+    ElMessage.success('已发布到我的圈子')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '发布失败，请稍后重试')
+  } finally {
+    saving.value = false
+  }
 }
 
 async function addDoc(initialContent = '') {
@@ -304,6 +345,8 @@ async function addDoc(initialContent = '') {
   curDoc.title = '新笔记'
   curDoc.content = initialContent
   editorContent.value = initialContent
+  dirty.value = false
+  published.value = false
   creating.value = true
   try {
     const d = await createNote({
@@ -365,6 +408,39 @@ function syncLiveEditor() {
   editorContent.value = htmlToMarkdown(el)
 }
 
+function markDirty() {
+  dirty.value = true
+}
+
+/** 内容格式工具栏：保留当前选区后使用浏览器原生编辑命令，兼容 Markdown 内容。 */
+function runEditorCommand(command: string, value?: string) {
+  const el = liveEditorRef.value
+  if (!el) return
+  el.focus()
+  const resolvedValue = value?.startsWith('var(')
+    ? getComputedStyle(document.documentElement).getPropertyValue(value.slice(4, -1)).trim()
+    : value
+  try { document.execCommand('styleWithCSS', false, 'true') } catch { /* ignore */ }
+  try { document.execCommand(command, false, resolvedValue) } catch { /* ignore */ }
+  markDirty()
+  syncLiveEditor()
+}
+
+function insertEditorHtml(html: string) {
+  const el = liveEditorRef.value
+  if (!el) return
+  el.focus()
+  try { document.execCommand('insertHTML', false, html) } catch { el.insertAdjacentHTML('beforeend', html) }
+  markDirty()
+  syncLiveEditor()
+}
+
+function insertEditorCallout() {
+  insertEditorHtml('<blockquote><strong>旅行提示</strong><br>把值得记住的细节写在这里。</blockquote><p><br></p>')
+}
+
+function insertEditorDivider() { insertEditorHtml('<hr><p><br></p>') }
+
 function htmlToMarkdown(root: HTMLElement): string {
   const MAX_DEPTH = 80
   const walk = (node: Node, depth = 0): string => {
@@ -383,6 +459,13 @@ function htmlToMarkdown(root: HTMLElement): string {
     else if (tag === 'div') md = '\n' + inner
     else if (tag === 'strong' || tag === 'b') md = '**' + inner + '**'
     else if (tag === 'em' || tag === 'i') md = '*' + inner + '*'
+    else if (tag === 'u') md = '<u>' + inner + '</u>'
+    else if (tag === 's' || tag === 'strike') md = '<s>' + inner + '</s>'
+    else if (tag === 'mark') md = '<mark>' + inner + '</mark>'
+    else if (tag === 'span') {
+      const style = node.getAttribute('style') || ''
+      md = style ? '<span style="' + style.replace(/"/g, '&quot;') + '">' + inner + '</span>' : inner
+    }
     else if (tag === 'code' && node.parentElement?.tagName.toLowerCase() !== 'pre') md = '`' + inner + '`'
     else if (tag === 'pre') md = '\n\n```\n' + node.innerText.trim() + '\n```\n\n'
     else if (tag === 'img') {
@@ -458,6 +541,13 @@ function syncWithCursor(): { md: string; pos: number } {
     else if (tag === 'div') md = '\n' + inner
     else if (tag === 'strong' || tag === 'b') md = '**' + inner + '**'
     else if (tag === 'em' || tag === 'i') md = '*' + inner + '*'
+    else if (tag === 'u') md = '<u>' + inner + '</u>'
+    else if (tag === 's' || tag === 'strike') md = '<s>' + inner + '</s>'
+    else if (tag === 'mark') md = '<mark>' + inner + '</mark>'
+    else if (tag === 'span') {
+      const style = node.getAttribute('style') || ''
+      md = style ? '<span style="' + style.replace(/"/g, '&quot;') + '">' + inner + '</span>' : inner
+    }
     else if (tag === 'code' && node.parentElement?.tagName.toLowerCase() !== 'pre') md = '`' + inner + '`'
     else if (tag === 'pre') md = '\n\n```\n' + node.innerText.trim() + '\n```\n\n'
     else if (tag === 'img') {
@@ -1030,11 +1120,20 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
         </div>
         
         <div class="toolbar-right">
-          <input 
-            v-model="curDoc.title" 
-            class="title-input" 
-            placeholder="标题"
-          />
+          <div class="title-stack">
+            <input
+              v-model="curDoc.title"
+              class="title-input"
+              placeholder="标题"
+              @input="markDirty"
+            />
+            <input
+              v-model="curDoc.destination"
+              class="destination-input"
+              placeholder="添加目的地（可选）"
+              @input="markDirty"
+            />
+          </div>
           
           <div class="tool-group">
           </div>
@@ -1055,8 +1154,14 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
               </div>
             </div>
             <span class="save-indicator" :class="{ saving }">
-              {{ saving ? '保存中…' : '已保存' }}
+              {{ saving ? '保存中…' : dirty ? '未保存' : published ? '已发布' : '已保存' }}
             </span>
+            <button
+              class="publish-btn"
+              :disabled="saving"
+              title="发布到我的圈子"
+              @click="publishCurrentNote"
+            >{{ published ? '再次发布' : '发布到圈子' }}</button>
             <button 
               class="save-btn" 
               :style="{ background: effectiveTheme.accent }"
@@ -1072,8 +1177,36 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
       <div class="editor-body" v-if="curDoc.id || creating">
         <div class="editor-area">
           <div class="editor-main">
-            
-            <div ref="liveEditorRef" class="preview-content markdown-body live-editor" contenteditable="true" spellcheck="false" v-html="renderedPreview" @blur="syncLiveEditor" @click="handlePreviewClick" @paste="handleEditorPaste" @drop="handleImageDrop" @dragover="handleDragOver" @pointerdown="handleEditorPointerDown"></div>
+            <div class="format-toolbar" role="toolbar" aria-label="笔记格式工具栏">
+              <select class="format-select" aria-label="段落样式" @change="runEditorCommand('formatBlock', ($event.target as HTMLSelectElement).value)">
+                <option value="p">正文</option>
+                <option value="h1">标题 1</option>
+                <option value="h2">标题 2</option>
+                <option value="h3">标题 3</option>
+              </select>
+              <select class="format-select" aria-label="字号" @change="runEditorCommand('fontSize', ($event.target as HTMLSelectElement).value)">
+                <option value="3">标准</option>
+                <option value="2">较小</option>
+                <option value="4">大</option>
+                <option value="5">特大</option>
+              </select>
+              <span class="format-separator"></span>
+              <button type="button" class="format-btn" title="加粗" @mousedown.prevent="runEditorCommand('bold')">B</button>
+              <button type="button" class="format-btn italic" title="斜体" @mousedown.prevent="runEditorCommand('italic')">I</button>
+              <button type="button" class="format-btn underline" title="下划线" @mousedown.prevent="runEditorCommand('underline')">U</button>
+              <button type="button" class="format-btn" title="无序列表" @mousedown.prevent="runEditorCommand('insertUnorderedList')">☷</button>
+              <button type="button" class="format-btn" title="引用" @mousedown.prevent="runEditorCommand('formatBlock', 'blockquote')">❝</button>
+              <button type="button" class="format-btn" title="提示卡片" @mousedown.prevent="insertEditorCallout">✦</button>
+              <button type="button" class="format-btn" title="分割线" @mousedown.prevent="insertEditorDivider">—</button>
+              <span class="format-separator"></span>
+              <button type="button" class="color-dot color-dot--forest" title="森林绿文字" @mousedown.prevent="runEditorCommand('foreColor', 'var(--forest)')"></button>
+              <button type="button" class="color-dot color-dot--sunset" title="日落橙文字" @mousedown.prevent="runEditorCommand('foreColor', 'var(--sunset)')"></button>
+              <button type="button" class="color-dot color-dot--blue" title="蓝色文字" @mousedown.prevent="runEditorCommand('foreColor', '#5378ff')"></button>
+              <span class="format-spacer"></span>
+              <button type="button" class="insert-image-tool" :disabled="uploadingImage" title="插入插图" @mousedown.prevent="openMdPicker">{{ uploadingImage ? '上传中…' : '＋ 插图' }}</button>
+            </div>
+
+            <div ref="liveEditorRef" class="preview-content markdown-body live-editor" contenteditable="true" spellcheck="false" v-html="renderedPreview" @input="markDirty" @blur="syncLiveEditor" @click="handlePreviewClick" @paste="handleEditorPaste" @drop="handleImageDrop" @dragover="handleDragOver" @pointerdown="handleEditorPointerDown"></div>
           </div>
           
         </div>
@@ -1238,19 +1371,6 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 .notes-app {
   /* Keep the editor's design tokens local; the surrounding app follows the
      user's system palette independently. */
-  --forest: #164E42;
-  --forest-deep: #0E382E;
-  --roam: #4F8F78;
-  --roam-soft: #E9F1EC;
-  --sunset: #F27A4F;
-  --sunset-soft: #FDEEE6;
-  --paper: #F7F3EA;
-  --card: #FFFDF8;
-  --wash: #F2EDE1;
-  --ink: #1D2B27;
-  --ink-2: #5C6B65;
-  --ink-3: #8C9993;
-  --line: #E7E0D2;
   position: relative;
   display: flex;
   align-items: stretch;             /* 让所有子元素自动拉伸到全高 */
@@ -1258,9 +1378,11 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   overflow: hidden;
   min-width: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background: var(--notes-bg, #ffffff);
+  background: color-mix(in srgb, var(--notes-bg, #ffffff) 90%, var(--notes-fg, #1f2329)) !important;
   color: var(--notes-fg, #1f2329);
-  padding: 0;
+  padding: 8px;
+  gap: 8px;
+  background: var(--wash, #f2ede1);
 }
 
 .system-theme-check {
@@ -1280,9 +1402,10 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   flex-direction: column;
   min-height: 0;                   /* 允许 flex 子项正确计算溢出 */
   border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
-  border-radius: 18px;
-  margin: 8px 0 8px 8px;
-  box-shadow: 4px 0 18px rgba(31,35,41,.10);
+  border: 1px solid var(--notes-line, var(--line, #e5e6e8));
+  border-radius: 14px;
+  margin: 0;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--notes-fg, #1f2329) 8%, transparent);
   overflow: hidden;
   will-change: transform, opacity;
 }
@@ -1597,7 +1720,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 
 /* ─── 拖拽手柄（与面板内部分割线统一：1px #e5e6e8 细线） ─── */
 .drag-handle {
-  width: 14px;
+  width: 8px;
   flex-shrink: 0;
   cursor: col-resize;
   background: transparent;
@@ -1621,12 +1744,13 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   &::after {
     content: '';
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: 12px;
+    bottom: 12px;
     left: 50%;
     transform: translateX(-50%);
     width: 2px;
-    background: #d5d8dc;
+    border-radius: 999px;
+    background: var(--notes-line, #d5d8dc);
     transition: background .15s, width .15s;
   }
 
@@ -1642,8 +1766,8 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   }
 }
 
-.left-handle { margin-left: -1px; }
-.right-handle { margin-right: -1px; }
+.left-handle { margin: 0 -4px; }
+.right-handle { margin: 0 -4px; }
 
 /* ─── 中间编辑区 ─────────────────────────────────── */
 .center-panel {
@@ -1655,9 +1779,10 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   overflow: hidden;
   background: var(--notes-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
-  border-radius: 18px;
-  margin: 8px 0;
-  box-shadow: 0 8px 24px rgba(31,35,41,.10);
+  border: 1px solid var(--notes-line, var(--line, #e5e6e8));
+  border-radius: 14px;
+  margin: 0;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--notes-fg, #1f2329) 8%, transparent);
 }
 
 .editor-toolbar {
@@ -1667,7 +1792,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   /* 左右始终预留角落按钮空间：收起/展开时文字与按钮位置完全不变，零跳变 */
   padding: 12px 68px;
   border-bottom: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
-  border-radius: 18px 18px 0 0;
+  border-radius: 0;
   gap: 16px;
   flex-shrink: 0;
   background: var(--notes-bg, #fff);
@@ -1690,6 +1815,12 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   gap: 12px;
 }
 
+.title-stack {
+  display: grid;
+  gap: 1px;
+  min-width: 220px;
+}
+
 .title-input {
   border: 0;
   outline: none;
@@ -1704,11 +1835,85 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   &:focus { background: #f5f6f7; }
 }
 
+.destination-input {
+  border: 0;
+  outline: 0;
+  padding: 0 8px 4px;
+  background: transparent;
+  color: var(--ink-3, #8c9993);
+  font-size: 10px;
+  letter-spacing: .02em;
+  &::placeholder { color: var(--ink-3, #8c9993); }
+  &:focus { color: var(--notes-accent, #164e42); }
+}
+
 .tool-group {
   display: flex;
   align-items: center;
   gap: 4px;
 }
+
+.publish-btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--sunset, #f27a4f);
+  border-radius: 8px;
+  background: var(--sunset, #f27a4f);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform .15s, box-shadow .15s, opacity .15s;
+  &:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 14px color-mix(in srgb, var(--sunset) 24%, transparent); }
+  &:disabled { opacity: .55; cursor: wait; }
+}
+
+.format-toolbar {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--notes-line, #e5e6e8);
+  background: color-mix(in srgb, var(--notes-bg, #fff) 88%, var(--notes-fg, #1f2329) 12%);
+  flex-wrap: wrap;
+}
+.format-select {
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0 7px;
+  background: transparent;
+  color: var(--notes-fg, #1f2329);
+  font-size: 12px;
+  outline: 0;
+  cursor: pointer;
+  &:hover, &:focus { background: var(--notes-bg, #fff); border-color: var(--notes-line, #e5e6e8); }
+}
+.format-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--notes-fg, #1f2329);
+  font: 800 14px Georgia, serif;
+  cursor: pointer;
+  transition: background .15s, color .15s, transform .15s;
+  &:hover { background: var(--notes-wash, #f0f1f2); color: var(--notes-accent, #3370ff); transform: translateY(-1px); }
+}
+.format-btn.italic { font-style: italic; }
+.format-btn.underline { text-decoration: underline; }
+.format-separator { width: 1px; height: 20px; background: var(--notes-line, #e5e6e8); margin: 0 3px; }
+.format-spacer { flex: 1; }
+.color-dot { width: 14px; height: 14px; border: 2px solid var(--notes-bg, #fff); border-radius: 50%; box-shadow: 0 0 0 1px var(--notes-line); cursor: pointer; &:hover { transform: scale(1.15); } }
+.color-dot--forest { background: var(--forest); }
+.color-dot--sunset { background: var(--sunset); }
+.color-dot--blue { background: #5378ff; }
+.insert-image-tool { height: 28px; border: 1px solid var(--notes-accent); border-radius: 7px; padding: 0 9px; background: var(--notes-accent); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; &:disabled { opacity: .55; cursor: wait; } }
 
 .theme-popover-wrap { position: relative; }
 .theme-popover {
@@ -1867,10 +2072,11 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   min-height: 0;                   /* 关键：允许 flex 子项正确计算溢出 */
   box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
-  border-radius: 18px;
-  padding: 12px;
-  margin: 8px 8px 8px 0;
-  box-shadow: -4px 0 18px rgba(31,35,41,.10);
+  border: 1px solid var(--notes-line, var(--line, #e5e6e8));
+  border-radius: 14px;
+  padding: 0 12px 12px;
+  margin: 0;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--notes-fg, #1f2329) 8%, transparent);
   overflow: hidden;                /* 裁剪溢出，由内部 scroll 容器处理滚动 */
   background: var(--notes-bg, #fafafa);
   position: relative;

@@ -137,9 +137,10 @@ function search() {
   min-width: 180px;
   height: 30px;
   padding: 0 6px;
-  background: rgba(255,255,255,0.92);
+  background: rgba(8, 44, 37, 0.38);
+  border: 1px solid rgba(255,255,255,0.11);
   border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -164,7 +165,7 @@ function search() {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--ink-3, #8c9993);
+  color: rgba(255,255,255,0.62);
   font-size: 12px;
   line-height: 1;
   height: 100%;
@@ -175,13 +176,13 @@ function search() {
   position: relative;
   border-bottom: 2px solid transparent;
 
-  &:hover { color: var(--ink, #1d2b27); }
+  &:hover { color: #fff; background: rgba(255,255,255,.07); }
 
   &.active {
     background: transparent;  /* 不做白色胶囊，保持跟外层白膜一体 */
-    color: var(--forest, #164e42);
+    color: #fff;
     font-weight: 700;
-    border-bottom-color: var(--forest, #164e42);  /* 绿色下划线 */
+    border-bottom-color: var(--sunset, #f27a4f);  /* 当前页指示线 */
   }
 }
 
@@ -204,14 +205,14 @@ function search() {
 .tab-close-all {
   border: 0;
   background: transparent;
-  color: var(--ink-3, #8c9993);
+  color: rgba(255,255,255,0.62);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
   padding: 2px 4px;
   flex-shrink: 0;
 
-  &:hover { color: var(--sunset, #f27a4f); }
+  &:hover { color: #fff; background: rgba(255,255,255,.08); border-radius: 4px; }
 }
 
 .actions {

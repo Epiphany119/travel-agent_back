@@ -261,7 +261,7 @@ onUnmounted(() => {
 }
 .eyebrow { color: var(--sunset); font-size: 10px; font-weight: 800; letter-spacing: 0.18em; margin: 0 0 8px; }
 .page-head h1 { font: 32px "DM Serif Display", "Noto Sans SC"; color: var(--ink); margin: 0; }
-.sub { color: #687873; font-size: 13px; margin: 8px 0 0; }
+.sub { color: var(--ink-2); font-size: 13px; margin: 8px 0 0; }
 .status {
   display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700;
   color: #587368; border: 1px solid var(--line); padding: 7px 14px; border-radius: 24px;
@@ -402,7 +402,7 @@ onUnmounted(() => {
 .msg .meta { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: #b08968; margin-bottom: 4px; }
 .msg.agent { align-self: flex-start; background: var(--wash); border: 1px solid var(--line); border-top-left-radius: 6px; color: var(--ink); }
 .msg.user { align-self: flex-end; background: var(--forest); color: var(--card); border-top-right-radius: 6px; }
-.msg.tool { align-self: flex-start; background: #f2f7f4; border: 1px dashed #D5E4DA; color: #6e7d77; font-size: 12px; }
+.msg.tool { align-self: flex-start; background: var(--roam-soft); border: 1px dashed var(--line); color: var(--ink-2); font-size: 12px; }
 .msg.info { align-self: center; background: transparent; border: 0; color: #8a9792; font-size: 12px; text-align: center; max-width: 90%; }
 .typing { display: flex; gap: 5px; padding: 6px 2px; align-self: flex-start; }
 .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--roam); animation: blink 1s infinite; }
@@ -412,7 +412,7 @@ onUnmounted(() => {
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 20px 14px; }
 .chips button {
-  border: 1px solid #dfe7e1; background: #fff; color: var(--forest);
+  border: 1px solid var(--line); background: var(--card); color: var(--forest);
   padding: 6px 14px; border-radius: 22px; cursor: pointer; font-size: 12px; font-weight: 700;
   transition: background 0.2s, border-color 0.2s;
 }
@@ -430,7 +430,7 @@ onUnmounted(() => {
   padding: 10px 16px; border-radius: 999px; font-size: 13px;
   outline: none; transition: border-color 0.2s, background 0.2s;
 }
-.row input:focus { border-color: var(--roam); background: #fff; }
+.row input:focus { border-color: var(--roam); background: var(--card); }
 .row input:disabled { opacity: 0.5; }
 .row input::placeholder { color: #98a59f; }
 .send {
@@ -484,11 +484,11 @@ onUnmounted(() => {
 
 .tab-content { padding-top: 16px; }
 .day-weather-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.weather-chip { display: inline-flex; align-items: center; gap: 5px; background: #f0f7f4; border: 1px solid #d5e4da; color: #3d6e5a; font-size: 12px; padding: 5px 10px; border-radius: 20px; }
-.budget-chip { background: #fef9ec; border-color: #f0dfb5; color: #a0712e; }
+.weather-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--roam-soft); border: 1px solid var(--line); color: var(--forest); font-size: 12px; padding: 5px 10px; border-radius: 20px; }
+.budget-chip { background: var(--sunset-soft); border-color: var(--line); color: var(--forest); }
 
 .plan-md {
-  background: #fafaf8; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--wash); border: 1px solid var(--line); border-radius: 14px;
   padding: 18px 20px; font-size: 13.5px; line-height: 1.75; color: var(--ink);
   :deep(h2) { font-size: 17px; font-weight: 700; color: var(--ink); margin: 0 0 10px; border-bottom: 1.5px solid var(--line); padding-bottom: 6px; }
   :deep(h3) { font-size: 14px; font-weight: 700; color: var(--ink-2); margin: 14px 0 6px; }
@@ -499,7 +499,7 @@ onUnmounted(() => {
 }
 
 .activity-cards { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
-.activity-card { display:flex; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#fff; }
+.activity-card { display:flex; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:var(--card); }
 .activity-card img { width:112px; min-height:92px; object-fit:cover; }
 .activity-card-body { padding:10px 12px; min-width:0; }
 .activity-card-body > span { color:var(--forest); font-size:11px; font-weight:800; }

@@ -3,7 +3,7 @@ import { ref, computed, watch, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { addInspiration, addJourney, USER_ID, saveJourneyPoints, saveTravelNote } from '@/api/user'
-import { marked } from 'marked'
+import { renderMarkdown as renderSafeMarkdown } from '@/utils/markdown'
 import { subscribeA2AStream, fetchPoiImages, type TravelPlan } from '@/api/agent'
 import { useStreamStore } from '@/stores/stream'
 import { useUserStore } from '@/stores/user'
@@ -116,7 +116,7 @@ const dayTabs = computed(() => {
     return {
       label: `Day ${p.dayNumber}`,
       subLabel: p.date || '',
-      html: marked.parse(md) as string,
+      html: renderSafeMarkdown(md),
       weather: null,
       budget: dayCost || null
     }
@@ -124,7 +124,7 @@ const dayTabs = computed(() => {
 })
 
 function formatContent(content: string) {
-  return marked.parse(content) as string
+  return renderSafeMarkdown(content)
 }
 
 // 把完整行程按「第N天」拆成每天一小节，供各 tab 分别展示
@@ -485,7 +485,10 @@ function getMealType(time: string): string {
         <div class="plan-head">
           <div><p class="eyebrow">YOUR PERSONAL TRIP</p><h3>{{ destination }} · {{ dayTabs.length }}日慢旅行</h3><p class="plan-preferences">{{ preferenceSummary }}</p></div>
           <span class="plan-cost" v-if="totalPlanCost">已规划 ¥{{ totalPlanCost.toLocaleString() }}</span>
-          <button class="schedule-btn" :disabled="scheduling" @click="addToSchedule('inspiration')">＋ {{ scheduling ? '保存中…' : '提上日程' }}</button>
+          <div class="plan-actions">
+            <button class="schedule-btn" :disabled="scheduling" @click="addToSchedule('inspiration')">✦ {{ scheduling ? '保存中…' : '存到灵感目的地' }}</button>
+            <button class="schedule-btn schedule-btn--ghost" :disabled="scheduling" @click="addToSchedule('journey')">＋ 保存为我的旅程</button>
+          </div>
         </div>
         <div class="decision-panel">
           <div><span class="decision-kicker">AI 旅行策略</span><strong>{{ travelStyle }} × {{ interests.length ? interests.join(' · ') : '综合体验' }}</strong></div>
@@ -1066,7 +1069,9 @@ function getMealType(time: string): string {
 .agent-step p { margin:3px 0 0; color:var(--ink-2); font-size:11px; line-height:1.45; }
 .plan-preferences { margin:4px 0 0; color:var(--ink-2); font-size:12px; }
 .plan-cost { color:var(--forest); font-size:12px; font-weight:800; white-space:nowrap; }
+.plan-actions { display:flex; align-items:center; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
 .schedule-btn { border:1px solid var(--sunset); background:var(--sunset); color:#fff; border-radius:9px; padding:8px 12px; font-size:12px; font-weight:800; cursor:pointer; }
+.schedule-btn--ghost { background:transparent; color:var(--forest); border-color:var(--line); }
 .schedule-copy { color:var(--ink-2); font-size:13px; margin-top:0; }
 .schedule-options { display:grid; gap:10px; }
 .schedule-options button { text-align:left; border:1px solid var(--line); background:#fff; border-radius:12px; padding:14px; cursor:pointer; }

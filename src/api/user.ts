@@ -7,7 +7,7 @@ export interface ApiResult<T> {
 }
 
 // 获取当前登录用户 ID
-function getCurrentUserId(): string {
+export function getCurrentUserId(): string {
   return localStorage.getItem('roamly_user_id') || 'user_001'
 }
 
@@ -77,14 +77,26 @@ export function saveTravelNote(data: TravelNote) { return request.post<unknown, 
 export function copyTravelNote(id: number) { return request.post<unknown, ApiResult<TravelNote>>('/user/travel-notes/' + id + '/copy', null, { params: { userId: getCurrentUserId() } }) }
 export function getSharedTravelNote(token: string) { return request.get<unknown, ApiResult<TravelNote>>('/user/travel-notes/share/' + token) }
 export function deleteTravelNote(id: number) { return request.delete<unknown, ApiResult<unknown>>('/user/travel-notes/' + id) }
+export interface SocialNote {
+  id?: number; user_id?: string; userId?: string; travel_note_id?: number; travelNoteId?: number
+  title: string; content: string; cover_url?: string; coverUrl?: string
+  destination?: string; tags?: string[] | string; author?: string; author_name?: string; authorName?: string
+  author_avatar?: string; authorAvatar?: string; like_count?: number; likeCount?: number
+  comment_count?: number; commentCount?: number; favorite_count?: number; created_at?: string; updated_at?: string
+}
+export interface SocialComment {
+  id?: number; note_id?: number; user_id?: string; content: string; created_at?: string
+}
 export function searchUsers(q: string) { return request.get<unknown, ApiResult<any[]>>('/user/users/search', { params: { q } }) }
-export function listPublicNotes(page=0, size=20, q?: string, tag?: string) { return request.get<unknown, ApiResult<any[]>>('/user/social/notes', { params: { page, size, q, tag } }) }
-export function getPublicNote(id: number) { return request.get<unknown, ApiResult<any>>('/user/social/notes/' + id) }
+export function listPublicNotes(page=0, size=20, q?: string, tag?: string) { return request.get<unknown, ApiResult<SocialNote[]>>('/user/social/notes', { params: { page, size, q, tag } }) }
+export function getPublicNote(id: number) { return request.get<unknown, ApiResult<SocialNote>>('/user/social/notes/' + id) }
 export function reactNote(id: number, type: 'like'|'favorite') { return request.post('/user/social/notes/' + id + '/reaction', null, { params: { type, userId: getCurrentUserId() } }) }
-export function listComments(id: number) { return request.get<unknown, ApiResult<any[]>>('/user/social/notes/' + id + '/comments') }
+export function listComments(id: number) { return request.get<unknown, ApiResult<SocialComment[]>>('/user/social/notes/' + id + '/comments') }
 export function addComment(id: number, content: string) { return request.post('/user/social/notes/' + id + '/comments', { content }, { params: { userId: getCurrentUserId() } }) }
 export function requestFriend(id: string, message='') { return request.post('/user/users/' + id + '/friend-request', { message }, { params: { from: getCurrentUserId() } }) }
-export function publishSocialNote(data: { userId: string; travelNoteId?: number; title: string; content: string; coverUrl?: string; destination?: string; tags?: string[]; authorName?: string; authorAvatar?: string }) { return request.post('/user/social/notes', data) }
+export function publishSocialNote(data: { userId: string; travelNoteId?: number; title: string; content: string; coverUrl?: string; destination?: string; tags?: string[]; authorName?: string; authorAvatar?: string }) { return request.post<unknown, ApiResult<SocialNote & { published?: boolean }>>('/user/social/notes', data) }
+export function updateSocialNote(id: number, data: { userId?: string; title?: string; content?: string; coverUrl?: string; destination?: string; tags?: string[]; authorName?: string; authorAvatar?: string }) { return request.put<unknown, ApiResult<SocialNote>>('/user/social/notes/' + id, data, { params: { userId: getCurrentUserId() } }) }
+export function copySocialNote(id: number) { return request.post<unknown, ApiResult<TravelNote>>('/user/social/notes/' + id + '/copy', null, { params: { userId: getCurrentUserId() } }) }
 export function saveJourneyPoints(journeyId: number, points: JourneyPoint[]) {
   return request.post<unknown, ApiResult<unknown>>(`/user/journeys/${journeyId}/points`, points)
 }

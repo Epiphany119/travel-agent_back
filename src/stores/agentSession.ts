@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { watchEffect } from 'vue'
-import { marked } from 'marked'
+import { renderMarkdown as renderSafeMarkdown } from '@/utils/markdown'
 import { subscribeA2AStream, fetchPoiImages } from '@/api/agent'
 import { useStreamStore } from './stream'
 import { useRouter } from 'vue-router'
@@ -76,7 +76,7 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
         return {
           label: `Day ${d.day || 1}`,
           subLabel: d.date || '',
-          html: marked.parse(md) as string,
+          html: renderSafeMarkdown(md),
           weather: null,
           budget: d.dailyBudget || null,
         }
@@ -256,7 +256,7 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
     }
   }
 
-  function renderMarkdown(md: string) { return marked.parse(md) as string }
+  function renderMarkdown(md: string) { return renderSafeMarkdown(md) }
 
   // ── 完成计划后自动跳转到中间展示（三栏中间态） ──
   // 由组件里调用 agent.onDone() 触发（避免在 store 里硬耦合 useRouter）

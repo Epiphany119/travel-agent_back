@@ -93,14 +93,15 @@ function copyUrl(url: string) {
   position: relative;
   flex-shrink: 0;
   height: 100%;
-  background: var(--paper, #F7F3EA);
+  background: var(--card, #FFFDF8);
   display: flex;
   flex-direction: column;
   overflow: visible;
   box-sizing: border-box;
   /* 左右面板之间的分割竖线（App.vue 的 .app-resize-handle 也画了一条，
      这里只留一条淡色当底层分割）*/
-  border-left: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 14%, transparent);
+  border: 1px solid var(--line, #E7E0D2);
+  border-radius: 14px;
 }
 
 /* 内容起点从 header 下方对齐 */
@@ -108,7 +109,7 @@ function copyUrl(url: string) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 14px;
+  padding: 0 14px 14px;
   min-height: 0;
 }
 
@@ -130,7 +131,7 @@ function copyUrl(url: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1f2329;
+  color: var(--ink, #1f2329);
 }
 
 .panel-actions {
@@ -143,17 +144,17 @@ function copyUrl(url: string) {
   width: 28px;
   height: 28px;
   border: 0;
-  background: #f0f1f2;
+  background: var(--wash, #f0f1f2);
   border-radius: 5px;
   cursor: pointer;
   font-size: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #646a73;
+  color: var(--ink-2, #646a73);
   transition: background .15s, color .15s;
 
-  &:hover { background: #e5e6e8; color: #245bdb; }
+  &:hover { background: var(--roam-soft, #e5e6e8); color: var(--forest, #245bdb); }
   &.close:hover { background: #fee; }
 }
 
@@ -216,8 +217,8 @@ function copyUrl(url: string) {
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  background: #fff;
-  border-bottom: 1px solid #e5e6e8;
+  background: var(--card, #fff);
+  border-bottom: 1px solid var(--line, #e5e6e8);
   flex-shrink: 0;
 
   .link-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; flex-shrink: 0; }
@@ -228,7 +229,7 @@ function copyUrl(url: string) {
   flex: 1;
   width: 100%;
   border: 0;
-  background: #fff;
+  background: var(--card, #fff);
   min-height: 0;
 }
 

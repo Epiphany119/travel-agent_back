@@ -93,6 +93,8 @@ function openJourneyTab(d: JourneyDetail) {
     title: `我的旅程-${d.journey.destination || ('旅程 ' + d.journey.id)}`,
     data: {
       keyId: d.journey.id,
+      sourceType: 'journey',
+      journeyId: d.journey.id,
       destination: d.journey.destination || '',
       content: d.journey.summary || d.journey.destination || '暂无摘要',
       image: d.images?.[0]?.imageUrl || '',

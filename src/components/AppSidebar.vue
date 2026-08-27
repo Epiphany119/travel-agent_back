@@ -165,7 +165,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   flex-shrink: 0;
   height: calc(100% - 16px);    /* 让父 flex 控制高度，减去顶部/底部 8px 外边距 */
   margin: 8px 8px 8px 0;        /* 只留右边距，左边由 .app-main-row padding 8px 顶开 */
-  border-radius: 18px;
+  border-radius: 14px;
   position: sticky;
   z-index: 10000;
   top: 0;
@@ -203,7 +203,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
 .menu {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   margin-bottom: 14px;
 }
 
@@ -223,6 +223,18 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 
+  &::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    width: 3px;
+    height: 18px;
+    border-radius: 0 3px 3px 0;
+    background: var(--sunset, #F27A4F);
+    opacity: 0;
+    transition: opacity .2s;
+  }
+
   &:hover {
     background: rgba(255, 255, 255, 0.07);
     color: #FFFDF8;
@@ -231,6 +243,8 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   &.active {
     background: rgba(255, 255, 255, 0.14);
     color: #ffffff;
+
+    &::before { opacity: 1; }
   }
 }
 

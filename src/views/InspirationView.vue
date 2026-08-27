@@ -5,7 +5,7 @@ import { computed } from 'vue'
 import { useContentTabsStore } from '@/stores/contentTabs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listInspirations, addInspiration, updateInspiration, deleteInspiration, uploadImage, type Inspiration } from '@/api/user'
-import { marked } from 'marked'
+import { renderMarkdown as renderSafeMarkdown } from '@/utils/markdown'
 
 const router = useRouter()
 
@@ -19,8 +19,11 @@ function openView(item: Inspiration) {
     title: `灵感目的地-${item.name || '目的地'}`,
     data: {
       keyId: item.id ?? item.name,
+      sourceType: 'inspiration',
+      inspirationId: item.id,
+      destination: item.name || '',
       name: item.name || '',
-      content: item.quote || item.description || (`想去 ${item.name} 看看`),
+      content: item.description || item.quote || (`想去 ${item.name} 看看`),
       image: item.imageUrl || '',
       bestSeason: item.bestSeason || ''
     }
@@ -135,7 +138,7 @@ async function remove(item: Inspiration) {
 const seasonOptions = ['不限', '春季', '夏季', '秋季', '冬季']
 const statusText = (s?: number) => (s === 0 ? '待规划' : '已规划')
 const budgetText = (b?: number) => (b ? `¥${b.toLocaleString()}` : '—')
-const renderMarkdown = (value?: string) => marked.parse(value || '') as string
+const renderMarkdown = (value?: string) => renderSafeMarkdown(value)
 
 // 无图片时生成柔和的渐变占位背景，避免一片死灰
 const palettes = [

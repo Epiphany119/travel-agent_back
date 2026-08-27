@@ -15,7 +15,7 @@ let map: L.Map | null = null
 let markers: L.Marker[] = []
 
 // 每个旅程一个颜色，旗标按旅程着色
-const palette = ['var(--sunset)', 'var(--forest)', '#3a5f8a', '#b96a3d', '#7a5d8a', '#b39ac4', '#c0392b', '#5a8a4a']
+const palette = ['var(--forest)', 'var(--sunset)', 'var(--roam)', 'color-mix(in srgb, var(--forest) 72%, var(--ink))', 'color-mix(in srgb, var(--forest) 52%, var(--paper))', 'color-mix(in srgb, var(--sunset) 58%, var(--paper))', 'var(--forest-deep)', 'color-mix(in srgb, var(--roam) 55%, var(--ink))']
 
 function flagIcon(color: string, label: string) {
   return L.divIcon({
@@ -32,13 +32,14 @@ function flagIcon(color: string, label: string) {
 }
 
 function popupHtml(p: JourneyDetail['points'][number], j: JourneyDetail) {
-  const dest = j.journey.destination || ''
-  const date = p.visitDate || [j.journey.startDate, j.journey.endDate].filter(Boolean).join(' ~ ') || ''
-  const desc = p.description || j.journey.summary || '—'
+  const dest = escapeHtml(j.journey.destination || '')
+  const date = escapeHtml(p.visitDate || [j.journey.startDate, j.journey.endDate].filter(Boolean).join(' ~ ') || '')
+  const desc = escapeHtml(p.description || j.journey.summary || '—')
+  const name = escapeHtml(p.name || '未命名地点')
   return `
     <div class="jpop">
       <div class="jpop-tag">旅程 · ${dest}</div>
-      <h4>${p.name}</h4>
+      <h4>${name}</h4>
       <div class="jpop-date">${date ? '📅 ' + date : ''}</div>
       ${p.latitude ? `<div class="jpop-coord">📍 ${p.latitude}, ${p.longitude}</div>` : ''}
       <p>${desc}</p>

@@ -5,6 +5,7 @@ import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getPreferences, savePreferences, uploadAvatar, getAvatar, updateNickname, type UserPreference } from '@/api/user'
 import { logout as apiLogout, sendEmailCode, bindEmail as apiBindEmail, unbindEmail as apiUnbindEmail } from '@/api/auth'
+import { applySystemPalette as applyPalette, parseSystemPalette } from '@/utils/theme'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -12,20 +13,18 @@ const saving = ref(false)
 const loaded = ref(false)
 const paletteOpen = ref(false)
 const systemPalette = reactive({
-  fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42'
+  fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42', highlight: '#F27A4F'
 })
 const palettePresets = [
-  { name: 'Roamly', fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42' },
-  { name: '海岸', fg: '#17324D', bg: '#EEF7FA', accent: '#147D92' },
-  { name: '日落', fg: '#43251C', bg: '#FFF5ED', accent: '#C85A36' },
-  { name: '墨绿', fg: '#E8F1EC', bg: '#10241E', accent: '#4FBE91' }
+  { name: 'Roamly', fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42', highlight: '#F27A4F' },
+  { name: '品牌米白', fg: '#143C35', bg: '#FBF8F1', accent: '#1B5B4E', highlight: '#F4774B' },
+  { name: '海岸', fg: '#17324D', bg: '#EEF7FA', accent: '#147D92', highlight: '#3BA8B3' },
+  { name: '日落', fg: '#43251C', bg: '#FFF5ED', accent: '#C85A36', highlight: '#E87A45' },
+  { name: '墨绿', fg: '#E8F1EC', bg: '#10241E', accent: '#4FBE91', highlight: '#F2A36B' }
 ]
 
 function applySystemPalette() {
-  const root = document.documentElement
-  root.style.setProperty('--ink', systemPalette.fg)
-  root.style.setProperty('--paper', systemPalette.bg)
-  root.style.setProperty('--forest', systemPalette.accent)
+  applyPalette(systemPalette)
 }
 
 async function saveSystemPalette() {
@@ -54,10 +53,7 @@ function closePalette() {
 
 function loadSystemPalette() {
   try {
-    const saved = form.systemThemeJson ? JSON.parse(form.systemThemeJson) : {}
-    Object.assign(systemPalette, {
-      fg: saved.fg || systemPalette.fg, bg: saved.bg || systemPalette.bg, accent: saved.accent || systemPalette.accent
-    })
+    Object.assign(systemPalette, parseSystemPalette(form.systemThemeJson))
   } catch {}
   applySystemPalette()
 }
@@ -499,6 +495,7 @@ onMounted(() => { loadSystemPalette(); load() })
               <label>前景色<div class="palette-input"><input type="color" v-model="systemPalette.fg" @input="applySystemPalette" /><input v-model="systemPalette.fg" maxlength="7" @input="applySystemPalette" /></div></label>
               <label>背景色<div class="palette-input"><input type="color" v-model="systemPalette.bg" @input="applySystemPalette" /><input v-model="systemPalette.bg" maxlength="7" @input="applySystemPalette" /></div></label>
               <label>强调色<div class="palette-input"><input type="color" v-model="systemPalette.accent" @input="applySystemPalette" /><input v-model="systemPalette.accent" maxlength="7" @input="applySystemPalette" /></div></label>
+              <label>暖色点缀<div class="palette-input"><input type="color" v-model="systemPalette.highlight" @input="applySystemPalette" /><input v-model="systemPalette.highlight" maxlength="7" @input="applySystemPalette" /></div></label>
             </div>
             <div class="palette-presets"><button v-for="p in palettePresets" :key="p.name" type="button" :style="{ background: p.bg, color: p.fg, borderColor: p.accent }" @click="Object.assign(systemPalette, p); applySystemPalette()">{{ p.name }}</button></div>
             <button class="palette-save" type="button" :disabled="saving" @click="saveSystemPalette">{{ saving ? '保存中…' : '保存主题' }}</button>

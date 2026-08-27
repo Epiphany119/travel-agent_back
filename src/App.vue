@@ -1,6 +1,7 @@
 <template>
   <router-view v-if="isAuthPage" />
   <div v-else class="app-layout">
+    <CommandPalette />
     <div class="app-header-row">
       <!-- 顶栏横跨整个系统宽度：左栏 + app-main（右侧） -->
       <div class="app-header-left-spacer"></div>
@@ -45,9 +46,11 @@ import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import GlobalRightPanel from '@/components/GlobalRightPanel.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
 import { useContentTabsStore } from '@/stores/contentTabs'
 import { useRightPanelStore } from '@/stores/rightPanel'
 import { getPreferences } from '@/api/user'
+import { applySystemPalette as applyPalette, parseSystemPalette, DEFAULT_SYSTEM_PALETTE } from '@/utils/theme'
 
 const route = useRoute()
 const router = useRouter()
@@ -108,6 +111,8 @@ const defaultAssist: Record<string, { key: string; label: string }> = {
   '/agent-panel': { key: 'agent', label: '互动式规划' }
 }
 
+let paletteLoaded = false
+
 /** 右上角固定开关：隐藏 -> 打开右栏（按当前页面给对应辅助，低优先级页面移入右栏）；显示 -> 关闭 */
 function onPanelToggle() {
   if (rightPanel.show) {
@@ -159,23 +164,25 @@ function onRightPanelResizeStart(e: MouseEvent) {
   document.addEventListener('mousemove', handleMove)
   document.addEventListener('mouseup', handleUp)
 }
-const systemDefaults = { fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42' }
-
 async function applySystemPalette() {
-  const root = document.documentElement
-  let palette = systemDefaults
+  // 主题只在应用首次进入和重新登录后加载一次，避免每次切换页面都产生额外请求。
+  if (paletteLoaded && route.path !== '/auth') return
+  let palette = DEFAULT_SYSTEM_PALETTE
+  let loadedFromServer = false
   try {
     const result = await getPreferences()
     const p = result.data || {}
-    const saved = p.systemThemeJson ? JSON.parse(p.systemThemeJson) : {}
-    palette = { fg: saved.fg || systemDefaults.fg, bg: saved.bg || systemDefaults.bg, accent: saved.accent || systemDefaults.accent }
+    palette = parseSystemPalette(p.systemThemeJson)
+    loadedFromServer = true
   } catch { /* keep defaults when the profile cannot be loaded */ }
-  root.style.setProperty('--ink', palette.fg)
-  root.style.setProperty('--paper', palette.bg)
-  root.style.setProperty('--forest', palette.accent)
+  applyPalette(palette)
+  paletteLoaded = loadedFromServer && route.path !== '/auth'
 }
 
-watch(() => route.path, () => { void applySystemPalette() }, { immediate: true })
+watch(() => route.path, () => {
+  if (route.path === '/auth') paletteLoaded = false
+  void applySystemPalette()
+}, { immediate: true })
 </script>
 
 <style>
@@ -279,6 +286,10 @@ body {
   margin: 0 0 0 0;
   height: auto;                      /* 让 flex row 自己算高度 */
   align-self: stretch;
+  background: var(--card, #FFFDF8);
+  border: 1px solid var(--line, #E7E0D2);
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 /* app-body：横向排布 workspace | GlobalRightPanel */
@@ -289,7 +300,9 @@ body {
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  background: inherit;       /* 显式继承，防止 isolation/contain 切断 */
+  background: var(--wash, #F2EDE1);       /* 显式继承，防止 isolation/contain 切断 */
+  gap: 8px;
+  padding: 8px;
 }
 
 /* 中间工作区 */
@@ -301,8 +314,10 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: inherit;       /* 显式继承主题 paper 色 */
+  background: var(--card, #FFFDF8);       /* 显式继承主题 paper 色 */
   isolation: auto;
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 /* 底层路由页面容器：让 NotesView / JourneyView 真正填满 workspace */
@@ -312,7 +327,8 @@ body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  background: inherit;
+  background: var(--card, #FFFDF8);
+  border-radius: inherit;
 }
 
 /* ─── 独立 sibling 拖拽手柄 ──────────────────────────
@@ -326,7 +342,7 @@ body {
   top: 0;           /* 视觉竖线从 app-body 顶部贯穿到底 */
   bottom: 0;
   width: 14px;      /* 加宽热区，面板窄时也好命中 */
-  right: var(--rpw, 360px);
+  right: calc(var(--rpw, 360px) + 8px);
   transform: translateX(0);
   cursor: col-resize;
   z-index: 999999;  /* 压过 NotesView / 面板内任何高 z-index 元素 */

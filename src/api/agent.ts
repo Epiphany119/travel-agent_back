@@ -1,5 +1,14 @@
 import request from './index'
 
+function sseHeaders(): HeadersInit {
+  const token = localStorage.getItem('roamly_token')
+  return {
+    Accept: 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  }
+}
+
 export interface CreateSessionRequest {
   destination: string
   startDate?: string
@@ -146,7 +155,7 @@ export function subscribePlanStream(
 
   fetch(`/api/travel-plans/${planId}/stream`, {
     method: 'GET',
-    headers: { Accept: 'text/event-stream' },
+    headers: sseHeaders(),
     signal: controller.signal
   })
     .then(async (response) => {
@@ -228,7 +237,7 @@ export function subscribeA2AStream(
 
   fetch(`/a2a/tasks/stream?${queryParams.toString()}`, {
     method: 'GET',
-    headers: { Accept: 'text/event-stream' },
+    headers: sseHeaders(),
     signal: controller.signal
   })
     .then(async (response) => {
@@ -338,7 +347,7 @@ export function submitQuestionnaireAnswer(
 
   fetch(`/api/agent/questionnaire/${sessionId}/answer?step=${step}&answer=${encodeURIComponent(answer)}`, {
     method: 'POST',
-    headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' },
+    headers: sseHeaders(),
     signal: controller.signal
   })
     .then(async (response) => {

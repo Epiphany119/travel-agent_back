@@ -1,6 +1,31 @@
 <script setup lang="ts">
 import { useAgentSessionStore } from '@/stores/agentSession'
+import { addInspiration, getCurrentUserId } from '@/api/user'
+import { ref } from 'vue'
 const agent = useAgentSessionStore()
+const savingInspiration = ref(false)
+const savedInspiration = ref(false)
+
+async function savePlanAsInspiration() {
+  if (!agent.plan || savingInspiration.value) return
+  savingInspiration.value = true
+  try {
+    const firstImage = Object.values(agent.imageMap)[0] || ''
+    await addInspiration({
+      userId: getCurrentUserId(),
+      name: agent.plan.destination || '未命名目的地',
+      imageUrl: firstImage,
+      quote: `${agent.plan.days || agent.dayTabs.length} 天 · ¥${(agent.plan.budget || 0).toLocaleString()}`,
+      description: agent.overview || 'Roamly AI 为你生成的旅行计划',
+      tags: 'AI规划,旅行计划',
+      estimatedBudget: Number(agent.plan.budget || 0),
+      status: 0,
+      priority: 1
+    })
+    savedInspiration.value = true
+  } catch { /* 页面主流程不因收藏失败中断 */ }
+  finally { savingInspiration.value = false }
+}
 </script>
 
 <template>
@@ -10,6 +35,9 @@ const agent = useAgentSessionStore()
         <h2>{{ agent.plan.destination }} · {{ agent.dayTabs.length }} 天</h2>
         <p v-if="agent.plan.budget">预算 ¥{{ agent.plan.budget?.toLocaleString() }}</p>
       </div>
+      <button class="inspiration-btn" :disabled="savingInspiration || savedInspiration" @click="savePlanAsInspiration">
+        {{ savingInspiration ? '保存中…' : savedInspiration ? '已存入灵感' : '✦ 存到灵感目的地' }}
+      </button>
       <div v-if="agent.globalWeather" class="weather-badge">
         <span class="weather-icon">{{ agent.globalWeather.icon || '☀️' }}</span>
         <div>
@@ -84,6 +112,9 @@ const agent = useAgentSessionStore()
   /* results-only 模式下由 AgentPanel 外部用 :deep() 覆盖成 overflow:auto */
 }
 .plan-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+.inspiration-btn { margin-left: auto; border: 1px solid var(--sunset); border-radius: 9px; padding: 8px 11px; background: var(--sunset-soft); color: var(--sunset); font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap; transition: transform .15s, background .15s; }
+.inspiration-btn:hover:not(:disabled) { transform: translateY(-1px); background: color-mix(in srgb, var(--sunset) 18%, var(--paper)); }
+.inspiration-btn:disabled { opacity: .65; cursor: default; }
 .plan-head h2 { margin: 0; font-size: 20px; color: var(--ink); }
 .plan-head p { margin: 6px 0 0; color: #687873; font-size: 12px; }
 .weather-badge { display: flex; align-items: center; gap: 10px; background: var(--roam-soft); padding: 10px 14px; border-radius: 14px; flex-shrink: 0; }
@@ -234,4 +265,3 @@ const agent = useAgentSessionStore()
 .pois .lab { color: var(--forest); font-size: 12px; font-weight: 700; margin: 0 0 8px; }
 .pois span { display: inline-block; margin: 0 6px 6px 0; padding: 5px 11px; background: var(--roam-soft); color: var(--roam); border-radius: 16px; font-size: 12px; }
 </style>
-
