@@ -437,7 +437,7 @@ Authorization: Bearer <token>
 
 ### 3.26 社区 - 公开笔记列表
 
-- **GET** `/api/user/social/notes`（`page`/`size`，默认 0/20）
+- **GET** `/api/user/social/notes`（`page`/`size`，默认 0/20；可选 `q` 搜索标题/内容/目的地，`tag` 按标签筛选）
 
 ### 3.27 社区 - 公开笔记详情
 
@@ -464,7 +464,7 @@ Authorization: Bearer <token>
 **请求体**
 
 ```json
-{ "userId": "...", "title": "...", "content": "...", "coverUrl": "..." }
+{ "userId": "...", "title": "...", "content": "...", "coverUrl": "...", "destination": "杭州", "tags": ["人文", "慢旅行"] }
 ```
 
 ### 3.32 用户搜索

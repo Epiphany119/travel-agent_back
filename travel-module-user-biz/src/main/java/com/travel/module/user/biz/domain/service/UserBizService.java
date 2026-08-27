@@ -15,8 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.io.File;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.UUID;
 
 @Service
@@ -76,13 +75,63 @@ public class UserBizService {
         String key = q == null ? "" : q.trim();
         return jdbcTemplate.queryForList("SELECT public_id, nickname, avatar FROM user_profile WHERE public_id LIKE ? OR nickname LIKE ? LIMIT 20", "%" + key + "%", "%" + key + "%");
     }
-    public List<Map<String,Object>> listPublicNotes(int page, int size) {
-        int offset = Math.max(0, page) * Math.min(size, 50);
-        return jdbcTemplate.queryForList("SELECT id,user_id,title,content,cover_url,like_count,comment_count,favorite_count,created_at FROM social_note WHERE visibility='public' AND status='published' ORDER BY created_at DESC LIMIT ? OFFSET ?", Math.min(size, 50), offset);
+    public List<Map<String,Object>> listPublicNotes(int page, int size) { return listPublicNotes(page, size, null, null); }
+    public List<Map<String,Object>> listPublicNotes(int page, int size, String q, String tag) {
+        int safeSize = Math.max(1, Math.min(size, 50));
+        int offset = Math.max(0, page) * safeSize;
+        StringBuilder sql = new StringBuilder("SELECT n.id,n.user_id,n.title,n.content,n.cover_url,n.destination,n.tags,n.like_count,n.comment_count,n.favorite_count,n.created_at, COALESCE(NULLIF(n.author_name,''),p.nickname,n.user_id) author, COALESCE(NULLIF(n.author_avatar,''),p.avatar,'') author_avatar FROM social_note n LEFT JOIN user_profile p ON p.public_id=n.user_id WHERE n.visibility='public' AND n.status='published'");
+        java.util.List<Object> args = new java.util.ArrayList<>();
+        if (q != null && !q.isBlank()) { sql.append(" AND (n.title LIKE ? OR n.content LIKE ? OR n.destination LIKE ?)"); String key="%"+q.trim()+"%"; args.add(key); args.add(key); args.add(key); }
+        if (tag != null && !tag.isBlank()) { sql.append(" AND JSON_CONTAINS(n.tags, JSON_QUOTE(?))"); args.add(tag.trim()); }
+        sql.append(" ORDER BY n.created_at DESC LIMIT ? OFFSET ?"); args.add(safeSize); args.add(offset);
+        return jdbcTemplate.queryForList(sql.toString(), args.toArray());
     }
     public Map<String,Object> getPublicNote(Long id) {
         List<Map<String,Object>> rows = jdbcTemplate.queryForList("SELECT * FROM social_note WHERE id=? AND visibility='public'", id);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+    @Transactional
+    public Map<String,Object> updateSocialNote(Long id, String userId, Map<String,Object> body) {
+        List<Map<String,Object>> rows = jdbcTemplate.queryForList("SELECT user_id FROM social_note WHERE id=?", id);
+        if (rows.isEmpty()) return Map.of("updated", false);
+        String owner = String.valueOf(rows.get(0).get("user_id"));
+        if (!Objects.equals(owner, userId)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "无权修改该帖子");
+        String tags = body.get("tags") instanceof Collection ? new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(body.get("tags")).toString() : String.valueOf(body.getOrDefault("tags", "[]"));
+        jdbcTemplate.update("UPDATE social_note SET title=?,content=?,cover_url=?,destination=?,tags=?,author_name=?,author_avatar=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                String.valueOf(body.getOrDefault("title", "旅行笔记")), String.valueOf(body.getOrDefault("content", "")), String.valueOf(body.getOrDefault("coverUrl", "")), String.valueOf(body.getOrDefault("destination", "")), tags,
+                String.valueOf(body.getOrDefault("authorName", "")), String.valueOf(body.getOrDefault("authorAvatar", "")), id);
+        return getPublicNote(id);
+    }
+    @Transactional
+    public TravelNotePO copySocialNote(Long id, String userId) {
+        List<Map<String,Object>> rows = jdbcTemplate.queryForList("SELECT * FROM social_note WHERE id=? AND visibility='public'", id);
+        if (rows.isEmpty()) return null;
+        Map<String,Object> source = rows.get(0);
+        Object linkedId = source.get("travel_note_id");
+        if (linkedId instanceof Number) {
+            TravelNotePO linked = copyTravelNote(((Number) linkedId).longValue(), userId);
+            if (linked != null) return linked;
+        }
+        TravelNotePO copy = new TravelNotePO();
+        copy.setUserId(userId == null || userId.isBlank() ? "user_001" : userId);
+        copy.setTitle(String.valueOf(source.getOrDefault("title", "旅行笔记")) + " · 副本");
+        copy.setDestination(String.valueOf(source.getOrDefault("destination", "")));
+        copy.setNoteType("inspiration");
+        copy.setSourceType("copy");
+        copy.setStatus("draft");
+        copy.setVisibility("private");
+        copy.setCoverUrl(String.valueOf(source.getOrDefault("cover_url", "")));
+        try {
+            Map<String,Object> document = new LinkedHashMap<>();
+            document.put("version", 1);
+            document.put("format", "html");
+            document.put("origin", "copy");
+            document.put("blocks", List.of(Map.of("id", "body", "type", "rich-text", "html", String.valueOf(source.getOrDefault("content", "")))));
+            copy.setContentJson(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(document));
+        } catch (Exception e) {
+            copy.setContentJson("{\"version\":1,\"format\":\"html\",\"blocks\":[{\"id\":\"body\",\"type\":\"rich-text\",\"html\":\"\"}]}");
+        }
+        return saveTravelNote(copy);
     }
     @Transactional public void reactNote(Long noteId, String userId, String type) {
         int exists = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM social_reaction WHERE note_id=? AND user_id=? AND reaction_type=?", Integer.class, noteId, userId, type);
@@ -94,8 +143,12 @@ public class UserBizService {
     public List<Map<String,Object>> listComments(Long noteId) { return jdbcTemplate.queryForList("SELECT * FROM social_comment WHERE note_id=? ORDER BY created_at ASC", noteId); }
     public void requestFriend(String from, String to, String message) { jdbcTemplate.update("INSERT INTO social_friend_request(requester_id,receiver_id,message) VALUES(?,?,?) ON DUPLICATE KEY UPDATE status='pending',message=VALUES(message)", from,to,message == null ? "" : message); }
     public Map<String,Object> publishSocialNote(Map<String,Object> body) {
-        jdbcTemplate.update("INSERT INTO social_note(user_id,travel_note_id,title,content,cover_url) VALUES(?,?,?,?,?)", body.getOrDefault("userId","user_001"), body.get("travelNoteId"), body.getOrDefault("title","旅行笔记"), body.getOrDefault("content",""), body.getOrDefault("coverUrl",""));
-        return Map.of("published", true);
+        String tags = body.get("tags") instanceof java.util.Collection ? new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(body.get("tags")).toString() : String.valueOf(body.getOrDefault("tags", "[]"));
+        jdbcTemplate.update("INSERT INTO social_note(user_id,travel_note_id,title,content,cover_url,destination,tags,author_name,author_avatar) VALUES(?,?,?,?,?,?,?,?,?)", body.getOrDefault("userId","user_001"), body.get("travelNoteId"), body.getOrDefault("title","旅行笔记"), body.getOrDefault("content",""), body.getOrDefault("coverUrl",""), body.getOrDefault("destination", ""), tags, body.getOrDefault("authorName", ""), body.getOrDefault("authorAvatar", ""));
+        Map<String,Object> result = new LinkedHashMap<>();
+        result.put("published", true);
+        result.put("id", jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class));
+        return result;
     }
 
     @Value("${travel.amap.api-key:}")

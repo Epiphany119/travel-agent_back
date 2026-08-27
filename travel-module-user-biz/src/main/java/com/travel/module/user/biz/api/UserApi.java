@@ -60,8 +60,10 @@ public class UserApi {
     @GetMapping("/social/notes")
     public ApiResult<?> publicNotes(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiResult.success(userBizService.listPublicNotes(page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String tag) {
+        return ApiResult.success(userBizService.listPublicNotes(page, size, q, tag));
     }
 
     /**
@@ -147,6 +149,23 @@ public class UserApi {
     @PostMapping("/social/notes")
     public ApiResult<?> publishSocialNote(@RequestBody Map<String, Object> body) {
         return ApiResult.success(userBizService.publishSocialNote(body));
+    }
+
+    /** 更新自己发布的社区笔记，保持“打开即编辑”的交互闭环。 */
+    @PutMapping("/social/notes/{id}")
+    public ApiResult<?> updateSocialNote(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "user_001") String userId,
+            @RequestBody Map<String, Object> body) {
+        return ApiResult.success(userBizService.updateSocialNote(id, userId, body));
+    }
+
+    /** 将社区笔记复制成当前用户的私有旅行笔记。 */
+    @PostMapping("/social/notes/{id}/copy")
+    public ApiResult<?> copySocialNote(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "user_001") String userId) {
+        return ApiResult.success(userBizService.copySocialNote(id, userId));
     }
 
     // =====================================================================
