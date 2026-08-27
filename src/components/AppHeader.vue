@@ -2,10 +2,15 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentTabsStore } from '@/stores/contentTabs'
+import { useRightPanelStore } from '@/stores/rightPanel'
+import PanelOpenIcon from '@/assets/右边栏按钮-开.png'
+import PanelCloseIcon from '@/assets/右边栏按钮-关.png'
 
 const router = useRouter()
 const keyword = ref('')
 const tabs = useContentTabsStore()
+const rightPanel = useRightPanelStore()
+const emit = defineEmits<{ (e: 'toggle-panel'): void }>()
 
 function search() {
   const q = keyword.value.trim()
@@ -46,6 +51,14 @@ function search() {
     </div>
 
     <div class="actions">
+      <!-- 右侧栏开关：固定在右上角同一位置，点一下开 / 再点一下关 -->
+      <button
+        class="icon-btn panel-toggle-btn"
+        :title="rightPanel.show ? '收起右侧栏' : '打开右侧栏'"
+        @click="emit('toggle-panel')"
+      >
+        <img :src="rightPanel.show ? PanelCloseIcon : PanelOpenIcon" alt="右侧栏开关" />
+      </button>
       <button class="icon-btn" title="通知">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -246,7 +259,19 @@ function search() {
 
   svg { width: 15px; height: 15px; }
 
+  img {
+    width: 18px;
+    height: 18px;
+    display: block;
+    pointer-events: none;
+  }
+
   &:hover { background: rgba(255,255,255,0.25); }
+}
+
+/* 右侧栏开关按钮：固定右上角，强调色描边区分于普通图标按钮 */
+.panel-toggle-btn {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
 }
 
 .badge-dot {

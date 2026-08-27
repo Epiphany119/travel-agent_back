@@ -4,7 +4,7 @@
     <div class="app-header-row">
       <!-- 顶栏横跨整个系统宽度：左栏 + app-main（右侧） -->
       <div class="app-header-left-spacer"></div>
-      <AppHeader />
+      <AppHeader @toggle-panel="onPanelToggle" />
     </div>
 
     
@@ -85,6 +85,51 @@ watch(
   },
   { immediate: true }
 )
+
+/**
+ * 右侧面板只显示低优先级辅助 tab（由侧边栏 navigate 送入右栏），
+ * 不按中间路由联动，避免出现「中间和右边显示同一份内容」。
+ * 笔记界面自带面板，无需额外辅助。
+ */
+const exploreAssist = { key: 'explore', label: '发现灵感' }
+
+/**
+ * 三栏模式下，低优先级页面只在右侧辅助面板停留，中间主区域固定为高优先级页
+ * （笔记 /notes、个人信息 /profile、预览 /card-detail）。
+ * 打开右栏时若中间停在低优先级路由，先把它送回 /notes，再在右栏显示该内容。
+ */
+const defaultAssist: Record<string, { key: string; label: string }> = {
+  '/explore': exploreAssist,
+  '/inspirations': { key: 'inspirations', label: '灵感目的地' },
+  '/journeys': { key: 'journeys', label: '我的旅程' },
+  '/chat': { key: 'chat', label: 'AI 旅行规划' },
+  '/journey-map': { key: 'map', label: '足迹地图' },
+  '/users/search': { key: 'search', label: '寻找同好' },
+  '/agent-panel': { key: 'agent', label: '互动式规划' }
+}
+
+/** 右上角固定开关：隐藏 -> 打开右栏（按当前页面给对应辅助，低优先级页面移入右栏）；显示 -> 关闭 */
+function onPanelToggle() {
+  if (rightPanel.show) {
+    rightPanel.close()
+    return
+  }
+  const assist = defaultAssist[route.path]
+  if (assist) {
+    rightPanel.openView(assist.key, assist.label)
+    // 中间不是高优先级页时，送回 /notes，避免中间和右栏重复
+    if (route.path !== '/notes') {
+      router.push('/notes')
+    }
+    return
+  }
+  // /profile、/card-detail 等：保持中间，右栏给一个通用辅助
+  if (!rightPanel.type || rightPanel.type === 'empty' || !rightPanel.viewKey) {
+    rightPanel.openView(exploreAssist.key, exploreAssist.label)
+  } else {
+    rightPanel.show = true
+  }
+}
 
 function onRightPanelResizeStart(e: MouseEvent) {
   e.preventDefault()

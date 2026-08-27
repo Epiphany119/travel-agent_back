@@ -52,7 +52,6 @@ function copyUrl(url: string) {
               title="复制链接"
               @click="copyUrl(panel.linkData!.url)"
             >📋</button>
-            <button class="panel-btn close" title="收起面板" @click="panel.close()">✕</button>
           </div>
         </div>
 
@@ -154,7 +153,7 @@ function copyUrl(url: string) {
   transition: background .15s, color .15s;
 
   &:hover { background: #e5e6e8; color: #245bdb; }
-  &.close:hover { background: #fee; color: #c33; }
+  &.close:hover { background: #fee; }
 }
 
 .panel-body {

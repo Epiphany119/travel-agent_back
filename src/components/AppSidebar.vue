@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 import { useRightPanelStore } from '@/stores/rightPanel'
+import { useUserStore } from '@/stores/user'
 import roamlySymbol from '@/assets/brand/logo-app-icon.png'
 
 const router = useRouter()
 const route = useRoute()
-const userStore = useUserStore()
 const rightPanel = useRightPanelStore()
+const userStore = useUserStore()
 
 interface NavItem {
   path: string
@@ -42,14 +42,25 @@ const navMore: NavItem[] = [
 ]
 
 function isActive(item: NavItem) {
-  if (item.path === '/') return route.path === '/'
+  if (item.path === '/') return route.path === '/chat'
   return route.path.startsWith(item.path)
 }
 
-// 侧边栏 tab -> 右侧面板视图 key 映射
+/**
+ * 页面优先级：
+ *  高优先级（中间工作区）：旅行笔记 /notes、个人信息 /profile、卡片预览 /card-detail
+ *  低优先级（三栏时进右侧辅助面板）：发现灵感、灵感目的地、我的旅程、足迹地图、AI 规划等
+ * 规则：
+ *  - 右侧栏收起时：所有入口都在中间工作区自由切换路由
+ *  - 右侧栏打开时：高优先级留在中间切路由；低优先级在右侧辅助面板显示，
+ *    绝不让中间和右侧显示同一份内容
+ */
+const primaryNav = new Set(['/notes', '/profile'])
+
+/** 侧边栏入口 -> 右侧辅助面板视图 key 映射 */
 const viewKeyMap: Record<string, string> = {
   '/explore': 'explore',
-  '/': 'chat',
+  '/chat': 'chat',
   '/inspirations': 'inspirations',
   '/journeys': 'journeys',
   '/users/search': 'search',
@@ -57,20 +68,20 @@ const viewKeyMap: Record<string, string> = {
   '/agent-panel': 'agent'
 }
 
+function navPath(item: NavItem) {
+  return item.path === '/' ? '/chat' : item.path
+}
+
 function navigate(item: NavItem) {
-  // 旅行笔记固定在中间主区域
-  if (item.path === '/notes') {
-    router.push('/notes')
-    rightPanel.close()
+  const path = navPath(item)
+  const viewKey = viewKeyMap[path]
+  if (rightPanel.show && !primaryNav.has(item.path) && viewKey) {
+    // 三栏模式 + 低优先级 -> 右侧辅助面板（中间保持笔记/预览）
+    rightPanel.openView(viewKey, item.label)
     return
   }
-  // 其他 tab：不在中间覆盖笔记，直接在右侧面板显示对应页面
-  const viewKey = viewKeyMap[item.path]
-  if (viewKey) {
-    rightPanel.openView(viewKey, item.label)
-  } else {
-    router.push(item.path)
-  }
+  // 高优先级或右栏收起 -> 中间工作区切路由
+  router.push(path)
 }
 
 const avatarStyle = computed(() => {
