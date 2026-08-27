@@ -20,33 +20,6 @@ const activeComponent = computed(() => {
   return viewComponents[panel.viewKey] || null
 })
 
-// 拖拽调整宽度（相对 app-body 自身的右边界）
-function onDragStart(e: MouseEvent) {
-  e.preventDefault()
-  e.stopPropagation()
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-
-  const handleMove = (ev: MouseEvent) => {
-    const handleLeft = e.currentTarget as HTMLElement
-    const container = handleLeft.closest('.app-body') as HTMLElement | null
-    if (!container) return
-    const rect = container.getBoundingClientRect()
-    const newWidth = Math.min(860, Math.max(260, rect.right - ev.clientX))
-    panel.setWidth(newWidth)
-  }
-
-  const handleUp = () => {
-    document.removeEventListener('mousemove', handleMove)
-    document.removeEventListener('mouseup', handleUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-  }
-
-  document.addEventListener('mousemove', handleMove)
-  document.addEventListener('mouseup', handleUp)
-}
-
 function openExternal(url: string) {
   window.open(url, '_blank', 'noopener')
 }
@@ -60,11 +33,8 @@ function copyUrl(url: string) {
     <aside
       v-if="panel.show"
       class="global-right-panel"
-      :style="{ width: panel.width + 'px' }"
+      :style="{ width: panel.width + 'px', '--_rp-w': panel.width + 'px' }"
     >
-      <!-- 拖拽手柄：避开顶部 48px header，从 header 下方延伸到底 -->
-      <div class="panel-drag-handle" @mousedown="onDragStart"></div>
-
       <div class="panel-inner">
         <!-- 面板标题栏 -->
         <div class="panel-header">
@@ -122,71 +92,26 @@ function copyUrl(url: string) {
 .global-right-panel {
   position: relative;
   flex-shrink: 0;
-  height: 100%;              /* 跟着 app-body 全高 */
+  height: 100%;
   background: var(--notes-bg, #fafafa);
   display: flex;
   flex-direction: column;
-  overflow: visible;         /* ← 允许左侧拖拽手柄溢出到面板外面（之前 hidden 把它裁没了） */
-  isolation: isolate;
+  overflow: visible;  /* 允许左侧拖拽手柄溢出到面板外 */
   box-sizing: border-box;
   border-left: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 14%, transparent);
-
-  /* 内容自身的裁剪下沉到 .panel-inner，外层只负责容器 */
-  .panel-inner { overflow: hidden; }
 }
 
 /* 内容起点从 header 下方对齐 */
 .panel-inner {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  padding: 14px 14px 14px 14px;
+  flex: 1;
+  overflow: hidden;       /* ← 内容在这里裁剪 */
+  padding: 14px;
   min-height: 0;
 }
 
 /* 拖拽手柄：避开顶部 48px header，从 header 下方延伸到底 */
-.panel-drag-handle {
-  position: absolute;
-  top: 48px;
-  bottom: 0;
-  left: -7px;
-  width: 14px;
-  cursor: col-resize;
-  z-index: 100;
-  background: transparent;
-  pointer-events: auto;
-  user-select: none;
-  touch-action: none;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: -8px;
-    bottom: -8px;
-    left: 0;
-    right: 0;
-    background: transparent;
-  }
-
-  &::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 2px;
-    background: #d5d8dc;
-    box-shadow: 1px 0 2px rgba(0,0,0,.04);
-    transition: background .15s, width .15s, box-shadow .15s;
-  }
-
-  &:hover::after {
-    width: 3px;
-    background: var(--notes-accent, #3370ff);
-    box-shadow: 0 0 6px rgba(51,112,255,.25);
-  }
-}
 
 .panel-header {
   flex-shrink: 0;
@@ -249,8 +174,8 @@ function copyUrl(url: string) {
   overflow: auto;
   background: transparent;
   position: relative;
-  isolation: isolate;
-  contain: layout paint style;
+
+
   pointer-events: auto;
   display: flex;
   flex-direction: column;
@@ -352,4 +277,8 @@ function copyUrl(url: string) {
   opacity: 0;
   overflow: hidden;
 }
+
+/* ─── 拖拽手柄 ────────────────────────────────────────
+   手柄是 aside 的子元素，但用 position:absolute + z-index 高于 workspace。
+   手柄的热区完全在 aside 左侧 14px 内，不依赖父级 overflow 可见。 */
 </style>

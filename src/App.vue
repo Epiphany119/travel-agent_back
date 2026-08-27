@@ -13,6 +13,14 @@
 
         <!-- 右侧查看栏：嵌入 app-body，与 header 共享同一张卡片背景 -->
         <GlobalRightPanel />
+
+        <!-- 独立 sibling 拖拽手柄，绝对定位在 GlobalRightPanel 左边缘 -->
+        <div
+          v-if="rightPanel.show"
+          class="app-resize-handle"
+          :style="{'--rpw': rightPanel.width + 'px'}"
+          @mousedown="onRightPanelResizeStart"
+        ></div>
       </div>
     </div>
   </div>
@@ -24,10 +32,36 @@ import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import GlobalRightPanel from '@/components/GlobalRightPanel.vue'
+import { useRightPanelStore } from '@/stores/rightPanel'
 import { getPreferences } from '@/api/user'
 
 const route = useRoute()
 const isAuthPage = computed(() => route.path === '/auth' || route.path.startsWith('/auth/'))
+const rightPanel = useRightPanelStore()
+
+function onRightPanelResizeStart(e: MouseEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const handleMove = (ev: MouseEvent) => {
+    const panel = document.querySelector('.global-right-panel') as HTMLElement | null
+    if (!panel) return
+    // panel 右边界减去鼠标 X = 新宽度（鼠标越往左，面板越宽）
+    const right = panel.getBoundingClientRect().right
+    const w = Math.min(860, Math.max(260, right - ev.clientX))
+    rightPanel.setWidth(w)
+  }
+  const handleUp = () => {
+    document.removeEventListener('mousemove', handleMove)
+    document.removeEventListener('mouseup', handleUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', handleMove)
+  document.addEventListener('mouseup', handleUp)
+}
 const systemDefaults = { fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42' }
 
 async function applySystemPalette() {
@@ -146,6 +180,44 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* ─── 独立 sibling 拖拽手柄 ──────────────────────────
+   挂在 app-body 里、GlobalRightPanel 的旁边，绝对定位到面板左边缘。
+   它是 workspace 和 right-panel 的 sibling，不嵌在 panel 里面，
+   所以不受 GlobalRightPanel 的 overflow / isolation / z-index 影响。 */
+.app-resize-handle {
+  position: absolute;
+  top: 0;           /* 视觉竖线从 app-body 顶部贯穿到底 */
+  bottom: 0;
+  width: 10px;
+  right: var(--rpw, 360px);
+  /* -50% 时竖线正好落在面板左边缘；改成 -30% 让手柄中心往右偏 ~2px，
+     竖线跨过两个面板的边界一点，看起来在缝隙正中间 */
+  /* -30% 让竖线跨过两个面板的边界一点，看起来在缝隙正中间 */
+  transform: translateX(-0%);
+  cursor: col-resize;
+  z-index: 500;
+  background: transparent;
+
+  /* 视觉竖线贯穿整个 app-body */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: #d5d8dc;
+    box-shadow: 1px 0 2px rgba(0,0,0,.04);
+    transition: background .15s, width .15s, box-shadow .15s;
+  }
+  &:hover::before {
+    width: 3px;
+    background: var(--forest, #164E42);
+    box-shadow: 0 0 6px rgba(22,78,66,.25);
+  }
 }
 
 /* Notes page 自己管自己的满屏布局 */
