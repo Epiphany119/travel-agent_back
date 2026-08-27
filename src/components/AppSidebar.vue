@@ -75,6 +75,16 @@ function navPath(item: NavItem) {
 function navigate(item: NavItem) {
   const path = navPath(item)
   const viewKey = viewKeyMap[path]
+
+  // 特殊：互动式规划 — 三栏时中间进路由（显示结果）+ 右栏开对话
+  if (path === '/agent-panel') {
+    if (rightPanel.show && viewKey) {
+      rightPanel.openView(viewKey, item.label)
+    }
+    router.push(path)
+    return
+  }
+
   if (rightPanel.show && !primaryNav.has(item.path) && viewKey) {
     // 三栏模式 + 低优先级 -> 右侧辅助面板（中间保持笔记/预览）
     rightPanel.openView(viewKey, item.label)

@@ -114,6 +114,11 @@ function onPanelToggle() {
     rightPanel.close()
     return
   }
+  // 特殊：中间在 /agent-panel 时，右栏开对话、中间保持不动（结果留在中间）
+  if (route.path === '/agent-panel') {
+    rightPanel.openView('agent', '互动式规划')
+    return
+  }
   const assist = defaultAssist[route.path]
   if (assist) {
     rightPanel.openView(assist.key, assist.label)

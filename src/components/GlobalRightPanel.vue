@@ -58,7 +58,8 @@ function copyUrl(url: string) {
         <!-- 面板内容 -->
         <div class="panel-body">
           <div v-if="panel.type === 'view' && activeComponent" class="view-wrapper">
-            <component :is="activeComponent" />
+            <!-- 传给子组件一个 prop：你来自右栏宿主，可据此调整布局 -->
+            <component :is="activeComponent" :from-right-panel="true" />
           </div>
 
           <div v-else-if="panel.type === 'link' && panel.linkData" class="link-panel-content">
