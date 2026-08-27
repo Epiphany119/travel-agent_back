@@ -181,11 +181,15 @@ onUnmounted(() => {
           {{ agent.done ? '已生成' : agent.sending ? '生成中' : agent.loading ? '启动中' : '就绪' }}
         </div>
       </section>
-      <PlanPane v-if="agent.done && agent.plan" />
-      <div v-else class="plan-placeholder standalone">
-        <div class="placeholder-illustration">🗺️</div>
-        <h3>旅行计划将在这里呈现</h3>
-        <p>打开右侧辅助面板即可开始与 Agent 对话，完成问卷后结果会自动显示在中央。</p>
+      <!-- ★ 关键：plan-scroll 是 results-only 模式下唯一的滚动容器，
+           确保底部完整行程正文等内容可以滚出来 -->
+      <div class="plan-scroll">
+        <PlanPane v-if="agent.done && agent.plan" />
+        <div v-else class="plan-placeholder standalone">
+          <div class="placeholder-illustration">🗺️</div>
+          <h3>旅行计划将在这里呈现</h3>
+          <p>打开右侧辅助面板即可开始与 Agent 对话，完成问卷后结果会自动显示在中央。</p>
+        </div>
       </div>
     </template>
 
@@ -275,25 +279,36 @@ onUnmounted(() => {
   min-height: 0;         /* ★ allow flex child to shrink */
   display: flex;
   flex-direction: row;
+  align-items: stretch;  /* ★ 左右两栏都拉高到一致高度 */
   gap: 20px;
-  overflow: hidden;      /* prevent outer scrollbar */
+  overflow: hidden;
 }
 .chat-pane {
   flex: 0 0 46%;
   min-width: 360px;
   max-width: 520px;
-  min-height: 0;         /* ★ allow child .chat-card to flex */
+  min-height: 0;
+  height: 0;             /* ★ 关键：压到 0 让 flex-grow 接管 */
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .plan-pane {
-  flex: 1 1 auto;
+  /* ★ 用 flex 缩写: grow=1 shrink=1 basis=0 且 overflow hidden 强约束高度 */
+  flex: 1 1 0%;
   min-width: 0;
-  min-height: 0;         /* ★ allow internal content to scroll */
-  overflow-y: auto;      /* ★ plan pane IS the scroll container */
+  min-height: 0;
+  height: 0;             /* ★ 关键：把高度压到 0，让 flex-grow 接管 → 保证不会撑出去 */
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
-  /* smooth scroll + nicer scrollbar */
   scroll-behavior: smooth;
+  /* 强制内层 PlanPane 的 .plan-wrapper 不要自己滚 —— 唯一滚容器是 plan-pane */
+  & > :deep(.plan-wrapper) {
+    min-height: 0;
+    overflow-y: visible !important;
+    height: auto;
+  }
 }
 .split-divider {
   width: 1px;
@@ -329,16 +344,25 @@ onUnmounted(() => {
 .mode-results-only {
   max-width: 1100px;
   height: 100%;
-  overflow: hidden;          /* 页面本身不滚 */
+  overflow: hidden;              /* 外层锁死，不滚 */
+  display: flex;
+  flex-direction: column;
 }
 .mode-results-only .page-head.slim h1 { font-size: 28px; }
-/* results-only 模式下 PlanPane 是唯一内容，让它填满并内部滚 */
-.mode-results-only :deep(.plan-wrapper) {
+/* ★ plan-scroll：results-only 模式唯一滚容器 */
+.mode-results-only .plan-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;          /* ★ PlanPane 自己滚 */
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
   scroll-behavior: smooth;
+}
+/* PlanPane 在 results-only 模式下不滚，被 plan-scroll 撑着 */
+.mode-results-only :deep(.plan-wrapper) {
+  min-height: 0;
+  overflow-y: visible !important;
+  height: auto;
 }
 
 /* ── 对话卡片（split + chat-only 共用）─────────────────────── */

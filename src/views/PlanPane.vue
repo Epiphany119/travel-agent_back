@@ -40,9 +40,17 @@ const agent = useAgentSessionStore()
             <div v-if="agent.dayTabs[agent.activeDay].budget" class="weather-chip budget-chip"><span>💰</span><span>¥{{ agent.dayTabs[agent.activeDay].budget }}</span></div>
           </div>
           <div v-if="agent.currentActivities.length" class="activity-cards">
-            <article v-for="(activity, ai) in agent.currentActivities" :key="ai" class="activity-card">
-              <img v-if="agent.imageMap[activity.name]" :src="agent.imageMap[activity.name]" :alt="activity.name" loading="lazy" />
-              <div class="activity-card-body"><span>{{ activity.time || '行程' }}</span><h4>{{ activity.name }}</h4><p>{{ activity.location || activity.notes }}</p><small>⏱ {{ activity.duration ? Math.round(activity.duration / 60) : 1 }} 小时 · ¥{{ activity.cost || 0 }}</small></div>
+            <article v-for="(activity, ai) in agent.currentActivities" :key="ai" class="activity-card" :class="{ 'has-image': !!agent.imageMap[activity.name] }">
+              <div class="activity-card-media">
+                <img v-if="agent.imageMap[activity.name]" :src="agent.imageMap[activity.name]" :alt="activity.name" loading="lazy" />
+                <span v-else class="activity-card-placeholder">📍</span>
+              </div>
+              <div class="activity-card-body">
+                <span>{{ activity.time || '行程' }}</span>
+                <h4>{{ activity.name }}</h4>
+                <p>{{ activity.location || activity.notes }}</p>
+                <small>⏱ {{ activity.duration ? Math.round(activity.duration / 60) : 1 }} 小时 · ¥{{ activity.cost || 0 }}</small>
+              </div>
             </article>
           </div>
           <div v-if="agent.dayTabs[agent.activeDay].html" class="plan-md" v-html="agent.dayTabs[agent.activeDay].html"></div>
@@ -50,7 +58,12 @@ const agent = useAgentSessionStore()
       </div>
     </div>
 
-    <div v-if="agent.overview" class="plan-detail">
+    <!-- 底部详细总结：按 activeDay 切，和 tab 对齐 -->
+    <div v-if="agent.dayOverview" class="plan-detail">
+      <div class="plan-detail-inner" v-html="agent.renderMarkdown(agent.dayOverview)"></div>
+    </div>
+    <!-- 兜底：如果 dayOverview 为空但 overview 有内容，显示完整总览（不太可能发生） -->
+    <div v-else-if="agent.overview" class="plan-detail">
       <div class="plan-detail-inner" v-html="agent.renderMarkdown(agent.overview)"></div>
     </div>
 
@@ -62,7 +75,14 @@ const agent = useAgentSessionStore()
 </template>
 
 <style scoped lang="scss">
-.plan-wrapper { min-height: 0; height: 100%; display: flex; flex-direction: column; gap: 4px; }
+.plan-wrapper {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* 默认 split 模式下 plan-pane 是外层滚容器，plan-wrapper 只作为 flex 布局 */
+  /* results-only 模式下由 AgentPanel 外部用 :deep() 覆盖成 overflow:auto */
+}
 .plan-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
 .plan-head h2 { margin: 0; font-size: 20px; color: var(--ink); }
 .plan-head p { margin: 6px 0 0; color: #687873; font-size: 12px; }
@@ -102,14 +122,96 @@ const agent = useAgentSessionStore()
   :deep(li) { margin-bottom: 4px; }
 }
 
-.activity-cards { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
-.activity-card { display:flex; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#fff; }
-.activity-card img { width:112px; min-height:92px; object-fit:cover; }
-.activity-card-body { padding:10px 12px; min-width:0; }
-.activity-card-body > span { color:var(--forest); font-size:11px; font-weight:800; }
-.activity-card h4 { margin:3px 0; color:var(--sunset); font-size:15px; }
-.activity-card p { margin:0 0 5px; color:#687873; font-size:12px; }
-.activity-card small { color:#87938e; font-size:11px; }
+.activity-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+/* 小框框：上图下文字，固定宽度，水平排列 */
+.activity-card {
+  flex: 0 0 152px;         /* 固定宽度 + 允许换行 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.activity-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.activity-card-media {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #eef3ef 0%, #e0e8e3 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 14px 14px 0 0;  /* 跟父 .activity-card 圆角顶对齐 */
+}
+.activity-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: transparent;
+}
+.activity-card-placeholder {
+  font-size: 36px;
+  opacity: 0.55;
+  user-select: none;
+}
+
+.activity-card-body {
+  padding: 12px 12px 14px;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.activity-card-body > span {
+  color: var(--forest);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.activity-card h4 {
+  margin: 0;
+  color: var(--sunset);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  /* 防止名字太长撑破：最多两行截断 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.activity-card p {
+  margin: 0;
+  color: #687873;
+  font-size: 11.5px;
+  line-height: 1.5;
+  /* 最多两行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.activity-card small {
+  color: #87938e;
+  font-size: 11px;
+  margin-top: auto;        /* 推到最底 */
+}
 
 .plan-detail {
   margin-top: 20px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;

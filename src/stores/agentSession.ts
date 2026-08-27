@@ -88,6 +88,7 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
     }))
   })
 
+  /** 完整总览（所有天）— 目前 UI 没用到，预留做导出功能 */
   const overview = computed(() => {
     if (!plan.value?.dayPlans?.length) return ''
     return plan.value.dayPlans.map((d: any) => {
@@ -101,6 +102,35 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
         acts.length ? `\n${acts.map(fmt).join('\n')}` : '',
       ].filter(Boolean).join('\n')
     }).join('\n\n')
+  })
+
+  /** ★ 关键：底部详细总结按 activeDay 只出当天内容 — 和 tab 对齐 */
+  const dayOverview = computed(() => {
+    if (!plan.value?.dayPlans?.length) return ''
+    const d = plan.value.dayPlans[activeDay.value]
+    if (!d) return ''
+    const fmt = (a: any) =>
+      `- **${a.name}**${a.location ? `（${a.location}）` : ''}${a.time ? ` · ${a.time}` : ''}${a.notes ? `\n  ${a.notes}` : ''}`
+    const acts = d.activities || []
+
+    const morning = acts.filter((a: any) => a.time && a.time < '12:00')
+    const afternoon = acts.filter((a: any) => a.time && a.time >= '12:00' && a.time < '18:00')
+    const evening = acts.filter((a: any) => a.time && a.time >= '18:00')
+    const untimed = acts.filter((a: any) => !a.time)
+
+    const sections: string[] = []
+    if (morning.length) sections.push('🌅 **上午**\n' + morning.map(fmt).join('\n'))
+    if (afternoon.length) sections.push('☀️ **下午**\n' + afternoon.map(fmt).join('\n'))
+    if (evening.length) sections.push('🌙 **晚上**\n' + evening.map(fmt).join('\n'))
+    if (untimed.length) sections.push('📌 **其他**\n' + untimed.map(fmt).join('\n'))
+
+    return [
+      `## 第 ${d.day || '?'} 天${d.theme ? ` · ${d.theme}` : ''}`,
+      d.date ? `**日期：** ${d.date}` : '',
+      d.dailyBudget ? `**预算：** ¥${d.dailyBudget}` : '',
+      sections.length ? '' : (acts.length ? '\n' + acts.map(fmt).join('\n') : ''),
+      sections.join('\n\n'),
+    ].filter(Boolean).join('\n')
   })
 
   const globalWeather = computed(() => {
@@ -245,7 +275,7 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
     stepIndex, answers,
     // computed
     currentQuestion, meta, optionChips,
-    currentActivities, dayTabs, overview, globalWeather,
+    currentActivities, dayTabs, overview, dayOverview, globalWeather,
     // methods
     startQuestionnaire, reset, selectOption, send,
     push, greet, renderMarkdown,
