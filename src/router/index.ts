@@ -14,6 +14,7 @@ const router = createRouter({
     { path: '/notes', name: 'Notes', component: () => import('@/views/NotesView.vue') },
     { path: '/journeys', name: 'Journeys', component: () => import('@/views/JourneyView.vue') },
     { path: '/journey-map', name: 'JourneyMap', component: () => import('@/views/JourneyMapView.vue') },
+    { path: '/card-detail', name: 'CardDetail', component: () => import('@/views/CardDetailView.vue') },
     { path: '/agent-panel', name: 'AgentPanel', component: () => import('@/views/AgentPanel.vue') }
   ]
 })

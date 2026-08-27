@@ -28,9 +28,9 @@ function search() {
       />
     </div>
 
-    <!-- 嵌入式标签栏：仿 Chrome 标签风格 -->
-    <div v-if="tabs.tabs.length" class="inline-tabs">
-      <div class="tabs-scroll">
+    <!-- 嵌入式标签栏：仿 Chrome 标签风格，始终占位固定宽度 -->
+    <div class="inline-tabs">
+      <div v-if="tabs.tabs.length" class="tabs-scroll">
         <button
           v-for="t in tabs.tabs"
           :key="t.id"
@@ -120,9 +120,9 @@ function search() {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 30px;   /* ← 整个白色标签板块高度压到 30px */
+  flex: 1 1 auto;       /* 填满 app-header 剩余空间 */
+  min-width: 180px;
+  height: 30px;
   padding: 0 6px;
   background: rgba(255,255,255,0.92);
   border-radius: 8px;

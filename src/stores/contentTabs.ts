@@ -25,6 +25,8 @@ const MAX_TABS = 10
 export const useContentTabsStore = defineStore('contentTabs', () => {
   const tabs = ref<ContentTab[]>([])
   const activeId = ref<string | null>(null)
+  /** 预览来源路由：关闭预览/全部标签后返回的位置（由 App.vue 在路由跳转时记录） */
+  const lastRoute = ref<string>('/notes')
 
   const activeTab = computed<ContentTab | null>(
     () => tabs.value.find(t => t.id === activeId.value) ?? null
@@ -68,5 +70,5 @@ export const useContentTabsStore = defineStore('contentTabs', () => {
     activeId.value = null
   }
 
-  return { tabs, activeId, activeTab, MAX_TABS, open, close, activate, closeAll }
+  return { tabs, activeId, activeTab, lastRoute, MAX_TABS, open, close, activate, closeAll }
 })

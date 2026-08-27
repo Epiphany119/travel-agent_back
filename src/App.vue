@@ -1,26 +1,39 @@
 <template>
   <router-view v-if="isAuthPage" />
   <div v-else class="app-layout">
-    <AppSidebar />
-    <div class="app-main">
+    <div class="app-header-row">
+      <!-- 顶栏横跨整个系统宽度：左栏 + app-main（右侧） -->
+      <div class="app-header-left-spacer"></div>
       <AppHeader />
-      <div class="app-body">
-        <!-- 中间工作区 -->
-        <div class="workspace">
-          <!-- 底层页面（如旅行笔记）保持存活 -->
-          <router-view />
+    </div>
+
+    
+    <div class="app-main-row">
+      <AppSidebar />
+
+      <!-- app-main：一张白色圆角大卡片，里面横向布局 header + workspace + right-panel -->
+      <div class="app-main">
+        <div class="app-body">
+          <!-- 中间工作区 -->
+          <div class="workspace">
+            <!-- 底层路由页面保持存活（如 NotesView） -->
+            <router-view v-slot="{ Component, route: r }">
+              <component :is="Component" :key="r.fullPath" class="workspace-route-view" />
+            </router-view>
+
+          </div>
+
+          <!-- 右侧查看栏 -->
+          <GlobalRightPanel />
+
+          <!-- 独立 sibling 拖拽手柄 -->
+          <div
+            v-if="rightPanel.show"
+            class="app-resize-handle"
+            :style="{'--rpw': rightPanel.width + 'px'}"
+            @mousedown="onRightPanelResizeStart"
+          ></div>
         </div>
-
-        <!-- 右侧查看栏：嵌入 app-body，与 header 共享同一张卡片背景 -->
-        <GlobalRightPanel />
-
-        <!-- 独立 sibling 拖拽手柄，绝对定位在 GlobalRightPanel 左边缘 -->
-        <div
-          v-if="rightPanel.show"
-          class="app-resize-handle"
-          :style="{'--rpw': rightPanel.width + 'px'}"
-          @mousedown="onRightPanelResizeStart"
-        ></div>
       </div>
     </div>
   </div>
@@ -28,16 +41,50 @@
 
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import GlobalRightPanel from '@/components/GlobalRightPanel.vue'
+import { useContentTabsStore } from '@/stores/contentTabs'
 import { useRightPanelStore } from '@/stores/rightPanel'
 import { getPreferences } from '@/api/user'
 
 const route = useRoute()
+const router = useRouter()
 const isAuthPage = computed(() => route.path === '/auth' || route.path.startsWith('/auth/'))
 const rightPanel = useRightPanelStore()
+const contentTabs = useContentTabsStore()
+
+/* 替换式预览联动：点卡片 open → activeId 变化 → 路由切到 /card-detail（不覆盖） */
+watch(
+  () => contentTabs.activeId,
+  (id) => {
+    if (id && route.path !== '/card-detail') {
+      router.push('/card-detail')
+    }
+  }
+)
+
+/* 全部标签关闭后，若停留在预览页则返回来源页 */
+watch(
+  () => contentTabs.tabs.length,
+  (n) => {
+    if (n === 0 && route.path === '/card-detail') {
+      router.push(contentTabs.lastRoute || '/notes')
+    }
+  }
+)
+
+/* 记录来源路由：离开预览页时记录位置，供关闭预览后返回 */
+watch(
+  () => route.fullPath,
+  (fp) => {
+    if (fp && fp !== '/card-detail' && fp !== '/auth') {
+      contentTabs.lastRoute = fp
+    }
+  },
+  { immediate: true }
+)
 
 function onRightPanelResizeStart(e: MouseEvent) {
   e.preventDefault()
@@ -121,6 +168,7 @@ body {
 */
 .app-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   min-height: 0;
   overflow: visible;
@@ -128,38 +176,60 @@ body {
   background: var(--paper, #F7F3EA);
 }
 
+/* 顶部深绿色导航栏：横跨整个系统宽度（左栏 + 右栏） */
+.app-header-row {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  padding: 0 8px;                    /* 和下方主体的 8px 外边距对齐 */
+  padding-top: 8px;                   /* 顶上加 8px，和 AppSidebar 顶部圆角对齐 */
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.app-header-left-spacer {
+  flex-shrink: 0;
+  width: 56px;                       /* 和 AppSidebar 同宽 */
+  height: 48px;
+  margin-right: 8px;                 /* 和 .app-main-row 的 gap 对齐 */
+}
+
+/* AppHeader 本身在 AppHeader.vue 里 height:48px */
+.app-header-row > .app-header {
+  flex: 1;
+  min-width: 0;
+  height: 48px;
+  background: var(--forest);
+  color: #fff;
+  flex-shrink: 0;
+  border-radius: 18px;               /* 整个顶栏独立圆角（只有上半部分能看到完整圆角） */
+  margin-right: 8px;                 /* 和右栏右边 8px 外边距对齐 */
+}
+
+/* 底部主体：左栏 + 中间大卡片 */
+.app-main-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  padding: 0 8px 8px 8px;   /* 右下左 8px，顶部 0 交给 header row */
+  gap: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+
 /* 顶层两列里的 app-main：撑满整个剩余宽度，右上、右下都留 8px 外边距 */
 .app-main {
   flex: 1;
-  height: calc(100vh - 16px);
   min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: visible;
-  margin: 8px 8px 8px 8px;
-  border-radius: 18px;
-  border: 1px solid var(--line, #e5e6e8);
-  background: var(--card, #FFFDF8);
+  margin: 0 0 0 0;
+  height: auto;                      /* 让 flex row 自己算高度 */
+  align-self: stretch;
 }
-
-/* header 在 app-main 里，顶部圆角贴齐卡片 */
-.app-main > .app-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  border-radius: 18px 18px 0 0;
-  background: var(--forest);
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.app-main > .app-header .search input { background: transparent; color: #fff; }
-.app-main > .app-header .search input::placeholder { color: rgba(255,255,255,0.5); }
-.app-main > .app-header .search svg { color: rgba(255,255,255,0.7); }
-.app-main > .app-header .icon-btn { color: #fff; }
-.app-main > .app-header .icon-btn:hover { background: rgba(255,255,255,0.1); }
-.app-main > .app-header .new-btn { background: #fff; color: var(--forest); }
 
 /* app-body：横向排布 workspace | GlobalRightPanel */
 .app-body {
@@ -169,6 +239,7 @@ body {
   display: flex;
   flex-direction: row;
   overflow: hidden;
+  background: inherit;       /* 显式继承，防止 isolation/contain 切断 */
 }
 
 /* 中间工作区 */
@@ -180,44 +251,57 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: inherit;       /* 显式继承主题 paper 色 */
+  isolation: auto;
+}
+
+/* 底层路由页面容器：让 NotesView / JourneyView 真正填满 workspace */
+.workspace-route-view {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: inherit;
 }
 
 /* ─── 独立 sibling 拖拽手柄 ──────────────────────────
    挂在 app-body 里、GlobalRightPanel 的旁边，绝对定位到面板左边缘。
    它是 workspace 和 right-panel 的 sibling，不嵌在 panel 里面，
-   所以不受 GlobalRightPanel 的 overflow / isolation / z-index 影响。 */
+   所以不受 GlobalRightPanel 的 overflow / isolation / z-index 影响。
+   注意：本 style 是原生 CSS（无 lang="scss"），必须展开成纯 CSS 选择器，
+   不能使用 & 嵌套语法。 */
 .app-resize-handle {
   position: absolute;
   top: 0;           /* 视觉竖线从 app-body 顶部贯穿到底 */
   bottom: 0;
-  width: 10px;
+  width: 14px;      /* 加宽热区，面板窄时也好命中 */
   right: var(--rpw, 360px);
-  /* -50% 时竖线正好落在面板左边缘；改成 -30% 让手柄中心往右偏 ~2px，
-     竖线跨过两个面板的边界一点，看起来在缝隙正中间 */
-  /* -30% 让竖线跨过两个面板的边界一点，看起来在缝隙正中间 */
-  transform: translateX(-0%);
+  transform: translateX(0);
   cursor: col-resize;
-  z-index: 500;
+  z-index: 999999;  /* 压过 NotesView / 面板内任何高 z-index 元素 */
   background: transparent;
+  pointer-events: auto;
+}
 
-  /* 视觉竖线贯穿整个 app-body */
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 2px;
-    background: #d5d8dc;
-    box-shadow: 1px 0 2px rgba(0,0,0,.04);
-    transition: background .15s, width .15s, box-shadow .15s;
-  }
-  &:hover::before {
-    width: 3px;
-    background: var(--forest, #164E42);
-    box-shadow: 0 0 6px rgba(22,78,66,.25);
-  }
+/* 视觉竖线贯穿整个 app-body */
+.app-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-45%);   /* 让竖线跨在 workspace 与右侧面板的缝隙正中间 */
+  width: 2px;
+  background: #d5d8dc;
+  box-shadow: 1px 0 2px rgba(0,0,0,.04);
+  transition: background .15s, width .15s, box-shadow .15s;
+}
+
+.app-resize-handle:hover::before {
+  width: 3px;
+  background: var(--forest, #164E42);
+  box-shadow: 0 0 6px rgba(22,78,66,.25);
 }
 
 /* Notes page 自己管自己的满屏布局 */
@@ -225,7 +309,10 @@ body {
   border-radius: 0 !important;
   border: none !important;
   margin: 0 !important;
-  height: 100vh !important;
+  height: 100% !important;
+  min-height: 100%;
+  width: 100%;
+  position: relative;
 }
 
 /* Element Plus 主色对齐品牌色 */

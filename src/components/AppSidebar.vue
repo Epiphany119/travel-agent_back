@@ -142,8 +142,8 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
 .sidebar {
   width: 56px;
   flex-shrink: 0;
-  height: calc(100vh - 16px);
-  margin: 8px 0 8px 8px;
+  height: calc(100% - 16px);    /* 让父 flex 控制高度，减去顶部/底部 8px 外边距 */
+  margin: 8px 8px 8px 0;        /* 只留右边距，左边由 .app-main-row padding 8px 顶开 */
   border-radius: 18px;
   position: sticky;
   z-index: 10000;
@@ -152,7 +152,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   flex-direction: column;
   background: var(--forest);
   padding: 14px 8px;
-  overflow: visible;      /* 允许 tooltip 溢出显示 */
+  overflow: visible;
 }
 
 .brand {

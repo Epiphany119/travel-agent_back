@@ -93,11 +93,13 @@ function copyUrl(url: string) {
   position: relative;
   flex-shrink: 0;
   height: 100%;
-  background: var(--notes-bg, #fafafa);
+  background: var(--paper, #F7F3EA);
   display: flex;
   flex-direction: column;
-  overflow: visible;  /* 允许左侧拖拽手柄溢出到面板外 */
+  overflow: visible;
   box-sizing: border-box;
+  /* 左右面板之间的分割竖线（App.vue 的 .app-resize-handle 也画了一条，
+     这里只留一条淡色当底层分割）*/
   border-left: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 14%, transparent);
 }
 
@@ -105,13 +107,10 @@ function copyUrl(url: string) {
 .panel-inner {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  overflow: hidden;       /* ← 内容在这里裁剪 */
+  height: 100%;
   padding: 14px;
   min-height: 0;
 }
-
-/* 拖拽手柄：避开顶部 48px header，从 header 下方延伸到底 */
 
 .panel-header {
   flex-shrink: 0;

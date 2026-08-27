@@ -25,6 +25,7 @@ function openView(item: Inspiration) {
       bestSeason: item.bestSeason || ''
     }
   })
+  router.push('/card-detail')
 }
 function openStudioEdit() { if (selected.value) { form.value = { ...selected.value }; studioEditing.value = true } }
 function closeStudio() { selected.value = null; studioEditing.value = false }

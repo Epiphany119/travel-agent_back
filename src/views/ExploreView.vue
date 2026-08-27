@@ -30,6 +30,7 @@ function openNote(note: any) {
       likes: note.likes || ''
     }
   })
+  router.push('/card-detail')
 }
 function openInspiration(item: Inspiration) {
   contentTabs.open({
@@ -43,6 +44,7 @@ function openInspiration(item: Inspiration) {
       bestSeason: item.bestSeason || ''
     }
   })
+  router.push('/card-detail')
 }
 onMounted(async()=>{try{inspirations.value=(await listInspirations()).data||[]}catch{}})
 </script>

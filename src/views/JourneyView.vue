@@ -99,6 +99,7 @@ function openJourneyTab(d: JourneyDetail) {
       bestSeason: d.journey.travelType || ''
     }
   })
+  router.push('/card-detail')
 }
 function closeJourneyStudio() { selectedJourney.value = null; journeyStudioEditing.value = false }
 async function saveJourneyStudio() {
