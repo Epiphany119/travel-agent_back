@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useContentTabsStore } from '@/stores/contentTabs'
 import { listInspirations, type Inspiration } from '@/api/user'
 const router = useRouter(); const query = ref(''); const active = ref('为你推荐'); const tabs = ['为你推荐','城市灵感','AI 路线','避坑经验']; const inspirations = ref<Inspiration[]>([])
 const notes = [
@@ -12,12 +13,36 @@ const notes = [
   { title:'江西萍乡武功山｜云端徒步', author:'山友日记', city:'萍乡', likes:'756', image:'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=900&q=80', tags:['徒步','户外'], content:'Day 1：沈子村上山，住金顶帐篷。\nDay 2：看日出后发云界徒步至明月山。\n全程约 18 公里，建议 2 天行程。' },
   { title:'珠海日月贝大剧院周边打卡', author:'湾仔吃货', city:'珠海', likes:'1.2k', image:'https://images.unsplash.com/photo-1589394815804-964ed0be2eb5?auto=format&fit=crop&w=900&q=80', tags:['打卡','海边'], content:'傍晚日落时分最佳，贝壳建筑在夕阳下非常出片。\n周边可逛：野狸岛公园、情侣路、香洲湾。\n美食推荐：湾仔海鲜街、官也街。' }
 ]
-// 点击卡片 → 进入可查看可编辑的笔记页
+// 点击卡片 → 打开浏览器式卡片标签（覆盖中间查看，底层页面不受影响）
+const contentTabs = useContentTabsStore()
 function openNote(note: any) {
-  router.push({ path:'/publish', query:{ title:note.title, content:note.content||note.title, image:note.image||'', author:note.author||'', city:note.city||'' } })
+  contentTabs.open({
+    kind: 'explore-note',
+    title: `发现灵感-${note.city || note.title.slice(0, 6)}`,
+    data: {
+      keyId: note.title,
+      title: note.title,
+      content: note.content || note.title,
+      image: note.image || '',
+      author: note.author || '',
+      city: note.city || '',
+      tags: note.tags || [],
+      likes: note.likes || ''
+    }
+  })
 }
 function openInspiration(item: Inspiration) {
-  router.push({ path:'/publish', query:{ title:item.name||'想去看看', content:item.quote || item.description || ('想去 '+item.name+' 看看'), image:item.imageUrl||'' } })
+  contentTabs.open({
+    kind: 'explore-spot',
+    title: `发现灵感-${item.name || '目的地'}`,
+    data: {
+      keyId: item.id ?? item.name ?? item.quote,
+      name: item.name || '',
+      content: item.quote || item.description || (`想去 ${item.name} 看看`),
+      image: item.imageUrl || '',
+      bestSeason: item.bestSeason || ''
+    }
+  })
 }
 onMounted(async()=>{try{inspirations.value=(await listInspirations()).data||[]}catch{}})
 </script>

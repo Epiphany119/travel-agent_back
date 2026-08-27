@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { computed } from 'vue'
+import { useContentTabsStore } from '@/stores/contentTabs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listInspirations, addInspiration, updateInspiration, deleteInspiration, uploadImage, type Inspiration } from '@/api/user'
 import { marked } from 'marked'
@@ -10,7 +11,21 @@ const router = useRouter()
 
 const selected = ref<Inspiration | null>(null)
 const studioEditing = ref(false)
-function openView(item: Inspiration) { selected.value = { ...item }; studioEditing.value = false }
+const contentTabs = useContentTabsStore()
+/** 点击卡片 → 中间卡片标签查看（浏览器式导航，不影响底层页面） */
+function openView(item: Inspiration) {
+  contentTabs.open({
+    kind: 'inspiration',
+    title: `灵感目的地-${item.name || '目的地'}`,
+    data: {
+      keyId: item.id ?? item.name,
+      name: item.name || '',
+      content: item.quote || item.description || (`想去 ${item.name} 看看`),
+      image: item.imageUrl || '',
+      bestSeason: item.bestSeason || ''
+    }
+  })
+}
 function openStudioEdit() { if (selected.value) { form.value = { ...selected.value }; studioEditing.value = true } }
 function closeStudio() { selected.value = null; studioEditing.value = false }
 async function saveStudio() {

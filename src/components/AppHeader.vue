@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useContentTabsStore } from '@/stores/contentTabs'
 
 const router = useRouter()
 const keyword = ref('')
+const tabs = useContentTabsStore()
 
 function search() {
   const q = keyword.value.trim()
@@ -24,6 +26,23 @@ function search() {
         placeholder="搜索目的地、旅程…"
         @keyup.enter="search"
       />
+    </div>
+
+    <!-- 嵌入式标签栏：仿 Chrome 标签风格 -->
+    <div v-if="tabs.tabs.length" class="inline-tabs">
+      <div class="tabs-scroll">
+        <button
+          v-for="t in tabs.tabs"
+          :key="t.id"
+          class="tab-item"
+          :class="{ active: tabs.activeId === t.id }"
+          @click="tabs.activate(t.id)"
+        >
+          <span class="tab-label">{{ t.title }}</span>
+          <span class="tab-close" title="关闭" @click.stop="tabs.close(t.id)">×</span>
+        </button>
+      </div>
+      <button v-if="tabs.tabs.length > 1" class="tab-close-all" title="关闭全部" @click="tabs.closeAll()">✕</button>
     </div>
 
     <div class="actions">
@@ -50,19 +69,18 @@ function search() {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   width: 100%;
-  height: 52px;
-  padding: 6px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  height: 48px;
+  padding: 4px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
   background: transparent;
   flex-shrink: 0;
 }
 
 /* 搜索框：透明、无胶囊背景，仅底部一条细线 */
 .search {
-  flex: 1;
+  flex: 0 0 auto;
   max-width: 320px;
   display: flex;
   align-items: center;
@@ -86,7 +104,7 @@ function search() {
   }
 
   input {
-    flex: 1;
+    width: 180px;
     border: 0;
     background: transparent;
     outline: 0;
@@ -95,6 +113,92 @@ function search() {
 
     &::placeholder { color: rgba(255,255,255,0.5); }
   }
+}
+
+/* 嵌入在 header 里的 Chrome 风格标签栏 */
+.inline-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;   /* ← 整个白色标签板块高度压到 30px */
+  padding: 0 6px;
+  background: rgba(255,255,255,0.92);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+.tabs-scroll {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+
+  &::-webkit-scrollbar { display: none; }
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 150px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-3, #8c9993);
+  font-size: 12px;
+  line-height: 1;
+  height: 100%;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s;
+  flex-shrink: 0;
+  position: relative;
+  border-bottom: 2px solid transparent;
+
+  &:hover { color: var(--ink, #1d2b27); }
+
+  &.active {
+    background: transparent;  /* 不做白色胶囊，保持跟外层白膜一体 */
+    color: var(--forest, #164e42);
+    font-weight: 700;
+    border-bottom-color: var(--forest, #164e42);  /* 绿色下划线 */
+  }
+}
+
+.tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+.tab-close {
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 50%;
+  opacity: .55;
+
+  &:hover { opacity: 1; background: rgba(0, 0, 0, .08); }
+}
+
+.tab-close-all {
+  border: 0;
+  background: transparent;
+  color: var(--ink-3, #8c9993);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  flex-shrink: 0;
+
+  &:hover { color: var(--sunset, #f27a4f); }
 }
 
 .actions {
@@ -113,7 +217,7 @@ function search() {
   color: var(--forest);
   font-weight: 800;
   font-size: 13px;
-  padding: 9px 18px;
+  padding: 7px 16px;
   border-radius: 8px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
@@ -129,8 +233,8 @@ function search() {
 
 .icon-btn {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   border: 0;
   background: rgba(255,255,255,0.15);
@@ -140,24 +244,24 @@ function search() {
   cursor: pointer;
   transition: background 0.15s;
 
-  svg { width: 17px; height: 17px; }
+  svg { width: 15px; height: 15px; }
 
   &:hover { background: rgba(255,255,255,0.25); }
 }
 
 .badge-dot {
   position: absolute;
-  top: 9px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
+  top: 8px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--sunset);
-  box-shadow: 0 0 0 2px var(--card);
+  box-shadow: 0 0 0 2px var(--forest);
 }
 
 @media (max-width: 640px) {
-  .app-header { padding: 8px 12px; }
+  .app-header { padding: 6px 12px; }
   .icon-btn { display: none; }
 }
 </style>

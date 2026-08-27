@@ -4,9 +4,17 @@
     <AppSidebar />
     <div class="app-main">
       <AppHeader />
-      <router-view />
+      <div class="app-body">
+        <!-- 中间工作区 -->
+        <div class="workspace">
+          <!-- 底层页面（如旅行笔记）保持存活 -->
+          <router-view />
+        </div>
+
+        <!-- 右侧查看栏：嵌入 app-body，与 header 共享同一张卡片背景 -->
+        <GlobalRightPanel />
+      </div>
     </div>
-    <GlobalRightPanel />
   </div>
 </template>
 
@@ -62,15 +70,9 @@ watch(() => route.path, () => { void applySystemPalette() }, { immediate: true }
   --radius-card: 24px;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-html, body, #app {
-  height: 100%;
-}
+html, body, #app { height: 100%; }
 
 body {
   background: var(--paper);
@@ -79,7 +81,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 系统级三层布局：左侧边栏 | 中间主体 | 右侧面板 */
+/* ─── 顶层两列布局：AppSidebar | app-main ─────────────────────────
+   AppHeader + app-body(workspace + GlobalRightPanel) 都在 app-main 里。
+   Header 是一整条横跨 app-main 剩余宽度的绿色栏，不再被右侧面板切断。
+*/
 .app-layout {
   display: flex;
   height: 100vh;
@@ -89,6 +94,7 @@ body {
   background: var(--paper, #F7F3EA);
 }
 
+/* 顶层两列里的 app-main：撑满整个剩余宽度，右上、右下都留 8px 外边距 */
 .app-main {
   flex: 1;
   height: calc(100vh - 16px);
@@ -97,14 +103,14 @@ body {
   flex-direction: column;
   min-height: 0;
   overflow: visible;
-  margin: 8px 0 8px 8px;
+  margin: 8px 8px 8px 8px;
   border-radius: 18px;
   border: 1px solid var(--line, #e5e6e8);
   background: var(--card, #FFFDF8);
 }
 
-/* Header sticky - 跟随系统主题色，写死不动 */
-.app-main > .app-header { 
+/* header 在 app-main 里，顶部圆角贴齐卡片 */
+.app-main > .app-header {
   position: sticky;
   top: 0;
   z-index: 20;
@@ -114,47 +120,41 @@ body {
   flex-shrink: 0;
 }
 
-.app-main > .app-header .search input {
-  background: transparent;
-  color: #fff;
-}
+.app-main > .app-header .search input { background: transparent; color: #fff; }
+.app-main > .app-header .search input::placeholder { color: rgba(255,255,255,0.5); }
+.app-main > .app-header .search svg { color: rgba(255,255,255,0.7); }
+.app-main > .app-header .icon-btn { color: #fff; }
+.app-main > .app-header .icon-btn:hover { background: rgba(255,255,255,0.1); }
+.app-main > .app-header .new-btn { background: #fff; color: var(--forest); }
 
-.app-main > .app-header .search input::placeholder {
-  color: rgba(255,255,255,0.5);
-}
-
-.app-main > .app-header .search svg {
-  color: rgba(255,255,255,0.7);
-}
-
-.app-main > .app-header .icon-btn {
-  color: #fff;
-}
-
-.app-main > .app-header .icon-btn:hover {
-  background: rgba(255,255,255,0.1);
-}
-
-.app-main > .app-header .new-btn {
-  background: #fff;
-  color: var(--forest);
-}
-
-.app-main > *:not(.app-header) { 
+/* app-body：横向排布 workspace | GlobalRightPanel */
+.app-body {
+  position: relative;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
 }
 
-/* Notes page has its own layout; keep .app-main as simple flex container */
+/* 中间工作区 */
+.workspace {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Notes page 自己管自己的满屏布局 */
 .notes-app {
   border-radius: 0 !important;
   border: none !important;
   margin: 0 !important;
   height: 100vh !important;
 }
-
-/* 右侧面板样式由 GlobalRightPanel 组件内部控制 */
 
 /* Element Plus 主色对齐品牌色 */
 .el-button--primary {

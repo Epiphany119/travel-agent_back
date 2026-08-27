@@ -152,7 +152,7 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   flex-direction: column;
   background: var(--forest);
   padding: 14px 8px;
-  overflow: visible;  /* 允许 tooltip 溢出显示 */
+  overflow: visible;      /* 允许 tooltip 溢出显示 */
 }
 
 .brand {
