@@ -7,6 +7,7 @@ const router = createRouter({
     { path: '/explore', name: 'Explore', component: () => import('@/views/ExploreView.vue') },
     { path: '/chat', name: 'Chat', component: () => import('@/views/ChatView.vue') },
     { path: '/users/search', name: 'UserSearch', component: () => import('@/views/UserSearchView.vue') },
+    { path: '/users/:id', name: 'PublicUser', component: () => import('@/views/PublicUserView.vue') },
     { path: '/notes/:id', name: 'NoteDetail', component: () => import('@/views/NoteDetailView.vue') },
     { path: '/publish', name: 'PublishNote', component: () => import('@/views/PublishNoteView.vue') },
     { path: '/', redirect: '/notes' },

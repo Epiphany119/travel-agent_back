@@ -131,6 +131,12 @@ const isEditorMode = ref(false)
 const dirty = ref(false)
 const published = ref(false)
 const userStore = useUserStore()
+const copySourceNoteId = computed(() => {
+  try {
+    const meta = curDoc.themeJson ? JSON.parse(curDoc.themeJson) : null
+    return curDoc.sourceSocialNoteId || (meta?.sourceType === 'copy' ? Number(meta.sourceNoteId || 0) : 0) || 0
+  } catch { return curDoc.sourceSocialNoteId || 0 }
+})
 
 // 全局右侧面板
 const rightPanel = useRightPanelStore()
@@ -273,6 +279,7 @@ async function openDoc(id: number) {
     curDoc.updatedAt = d.updatedAt || ''
     curDoc.themeJson = d.themeJson || ''
     curDoc.content = d.content || ''
+    curDoc.sourceSocialNoteId = d.sourceSocialNoteId
 
     editorContent.value = d.content || ''
     dirty.value = false
@@ -294,7 +301,8 @@ async function saveDoc(silent = false): Promise<NoteDocument | undefined> {
       destination: curDoc.destination || '',
       coverUrl: curDoc.coverUrl || '',
       visibility: curDoc.visibility || 'private',
-      themeJson: themeToJson()
+      themeJson: themeToJson(),
+      sourceSocialNoteId: curDoc.sourceSocialNoteId
     }
     const d = await updateNote(currentId.value, payload as NoteDocument)
     if (!silent) ElMessage.success('已保存')
@@ -320,18 +328,23 @@ async function publishCurrentNote() {
   try {
     const saved = await saveDoc(true)
     if (currentId.value != null && !saved) return
-    await publishSocialNote({
+    const result = await publishSocialNote({
       userId: currentUserId.value,
+      privateNoteId: currentId.value,
+      sourceNoteId: copySourceNoteId.value || undefined,
       title: curDoc.title.trim(),
       content: editorContent.value,
       coverUrl: curDoc.coverUrl || '',
       destination: curDoc.destination || '',
       tags: curDoc.destination ? [curDoc.destination] : [],
-      authorName: userStore.nickname || '旅行者'
+      authorName: userStore.nickname || '旅行者',
+      authorAvatar: userStore.avatar || ''
     })
-    published.value = true
+    published.value = result.data?.published === true
     dirty.value = false
-    ElMessage.success('已发布到我的圈子')
+    if (published.value) ElMessage.success('已发布到我的圈子')
+    else if (result.data?.reviewRequired) ElMessage.warning(result.data.message || '已提交平台人工审核')
+    else ElMessage.warning(result.data?.message || 'Agent 版权检测未通过，暂不允许发布')
   } catch (e: any) {
     ElMessage.error(e?.message || '发布失败，请稍后重试')
   } finally {
@@ -1156,6 +1169,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
             <span class="save-indicator" :class="{ saving }">
               {{ saving ? '保存中…' : dirty ? '未保存' : published ? '已发布' : '已保存' }}
             </span>
+            <span v-if="copySourceNoteId" class="archive-indicator" :title="`该笔记复制自社区帖子 ${copySourceNoteId}，发布时会进行版权检测`">来源帖子 · {{ copySourceNoteId }}</span>
             <button
               class="publish-btn"
               :disabled="saving"

@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getPreferences, savePreferences, uploadAvatar, getAvatar, updateNickname, type UserPreference } from '@/api/user'
+import { getPreferences, savePreferences, uploadAvatar, getAvatar, updateNickname, listPublicNotes, type UserPreference, type SocialNote } from '@/api/user'
 import { logout as apiLogout, sendEmailCode, bindEmail as apiBindEmail, unbindEmail as apiUnbindEmail } from '@/api/auth'
 import { applySystemPalette as applyPalette, parseSystemPalette } from '@/utils/theme'
 
@@ -11,6 +11,11 @@ const router = useRouter()
 const userStore = useUserStore()
 const saving = ref(false)
 const loaded = ref(false)
+const rightView = ref<'posts' | 'prefs'>('posts')
+const rightPanelCollapsed = ref(false)
+const ownPosts = ref<SocialNote[]>([])
+const postsLoading = ref(false)
+const postImageErrors = reactive<Record<string, boolean>>({})
 const paletteOpen = ref(false)
 const systemPalette = reactive({
   fg: '#1D2B27', bg: '#F7F3EA', accent: '#164E42', highlight: '#F27A4F'
@@ -118,8 +123,86 @@ const accommodationType = computed({ get: () => toList(form.accommodationType), 
 const transportationPreference = computed({ get: () => toList(form.transportationPreference), set: (v) => { form.transportationPreference = v.join(',') } })
 
 function resolveUrl(url: string) {
-  if (!url) return ''
-  return url.startsWith('http') ? url : `${import.meta.env.VITE_API_BASE_URL || ''}${url}`
+  const raw = String(url || '').trim()
+  if (!raw) return ''
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
+  const base = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  return `${base}${raw.startsWith('/') ? raw : `/${raw}`}`
+}
+
+function postKey(note: SocialNote) {
+  return String(note.id ?? `${note.user_id || note.userId || 'post'}-${note.title}`)
+}
+
+function extractFirstImage(content: unknown) {
+  const source = String(content || '')
+  const html = source.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1]
+  if (html) return html
+  return source.match(/!\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/i)?.[1] || ''
+}
+
+function postImage(note: SocialNote) {
+  if (postImageErrors[postKey(note)]) return ''
+  const value = note.coverUrl || note.cover_url || extractFirstImage(note.content) || (note as SocialNote & { image?: string }).image || ''
+  return resolveUrl(value)
+}
+
+function handlePostImageError(note: SocialNote) {
+  postImageErrors[postKey(note)] = true
+}
+
+function postTags(note: SocialNote) {
+  if (Array.isArray(note.tags)) return note.tags.map(tag => String(tag).trim()).filter(Boolean)
+  const raw = String(note.tags || '').trim()
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed.map(tag => String(tag).trim()).filter(Boolean)
+  } catch { /* 兼容旧数据的逗号分隔标签 */ }
+  return raw.split(/[,，]/).map(tag => tag.trim()).filter(Boolean)
+}
+
+function postAuthor(note: SocialNote) {
+  const currentUserId = localStorage.getItem('roamly_user_id') || 'user_001'
+  const noteUserId = note.user_id || note.userId || ''
+  if (String(noteUserId) === currentUserId && form.name) return form.name
+  return note.author || note.authorName || note.author_name || '旅行者'
+}
+
+function postAvatar(note: SocialNote) {
+  const currentUserId = localStorage.getItem('roamly_user_id') || 'user_001'
+  const noteUserId = note.user_id || note.userId || ''
+  const value = String(noteUserId) === currentUserId
+    ? avatar.value || note.authorAvatar || note.author_avatar || ''
+    : note.authorAvatar || note.author_avatar || ''
+  return resolveUrl(value)
+}
+
+function postExcerpt(note: SocialNote) {
+  const text = String(note.content || '')
+    .replace(/<img[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/[#>*_`~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!text) return '记录一段值得收藏的旅程。'
+  return text.length > 88 ? `${text.slice(0, 88)}…` : text
+}
+
+function postLikes(note: SocialNote) {
+  return note.likeCount ?? note.like_count ?? 0
+}
+
+function postComments(note: SocialNote) {
+  return note.commentCount ?? note.comment_count ?? 0
+}
+
+async function loadOwnPosts() {
+  postsLoading.value = true
+  try { ownPosts.value = (await listPublicNotes(0, 50, undefined, undefined, localStorage.getItem('roamly_user_id') || 'user_001')).data || [] }
+  catch { ownPosts.value = [] }
+  finally { postsLoading.value = false }
 }
 
 async function load() {
@@ -312,7 +395,7 @@ async function handleLogout() {
   } catch { /* 用户取消 */ }
 }
 
-onMounted(() => { loadSystemPalette(); load() })
+onMounted(() => { loadSystemPalette(); load(); loadOwnPosts() })
 </script>
 
 <template>
@@ -324,7 +407,7 @@ onMounted(() => { loadSystemPalette(); load() })
     </section>
 
     <div class="layout" v-loading="!loaded">
-      <!-- 左：资料卡片 -->
+      <!-- 左：资料卡片固定在原位，不再参与右侧内容的收起/展开 -->
       <aside class="profile-card">
         <div class="card-hero">
           <div class="avatar-ring">
@@ -485,8 +568,70 @@ onMounted(() => { loadSystemPalette(); load() })
         </div>
       </aside>
 
-      <!-- 右：旅行偏好 -->
-      <section class="panel prefs">
+      <!-- 右：内容面板。左侧固定，右侧可以独立切换和收起。 -->
+      <div class="right-panel-column" :class="{ 'is-collapsed': rightPanelCollapsed }">
+        <div class="right-panel-toolbar">
+          <div class="right-panel-tabs" role="tablist" aria-label="个人主页内容">
+            <button class="right-panel-tab" :class="{ active: rightView === 'posts' }" type="button" role="tab" :aria-selected="rightView === 'posts'" @click="rightView = 'posts'; rightPanelCollapsed = false">
+              <span class="tab-mark">◈</span> 我的公开帖子 <small>{{ ownPosts.length }}</small>
+            </button>
+            <button class="right-panel-tab" :class="{ active: rightView === 'prefs' }" type="button" role="tab" :aria-selected="rightView === 'prefs'" @click="rightView = 'prefs'; rightPanelCollapsed = false">
+              <span class="tab-mark">⚙</span> 旅行偏好
+            </button>
+          </div>
+          <button class="right-panel-collapse" type="button" :aria-expanded="!rightPanelCollapsed" @click="rightPanelCollapsed = !rightPanelCollapsed">
+            <span>{{ rightPanelCollapsed ? '展开面板' : '收起面板' }}</span><b>{{ rightPanelCollapsed ? '↘' : '↗' }}</b>
+          </button>
+        </div>
+
+        <section v-if="rightPanelCollapsed" class="right-panel-collapsed-card">
+          <div>
+            <p class="eyebrow">RIGHT PANEL</p>
+            <h3>{{ rightView === 'posts' ? '我的公开帖子' : '旅行偏好' }}</h3>
+            <p>面板已收起，左侧资料卡和当前页面位置保持不变。</p>
+          </div>
+          <button type="button" @click="rightPanelCollapsed = false">展开内容 <span>→</span></button>
+        </section>
+
+        <!-- 公开帖子：列表本身拥有明确的内部滚动边界 -->
+        <section v-else-if="rightView === 'posts'" class="panel posts-panel">
+          <div class="posts-panel-head">
+            <div><p class="eyebrow">MY CIRCLE</p><h3>我的公开帖子</h3><p>只有已发布到圈子的笔记会出现在这里。</p></div>
+            <button type="button" @click="router.push('/publish')">＋ 发布笔记</button>
+          </div>
+          <div v-loading="postsLoading" class="profile-post-grid">
+            <article v-for="post in ownPosts" :key="post.id" class="profile-post" tabindex="0" @click="router.push({ path: '/card-detail', query: { noteId: String(post.id) } })" @keyup.enter="router.push({ path: '/card-detail', query: { noteId: String(post.id) } })">
+              <div class="profile-post-cover">
+                <img v-if="postImage(post)" :src="postImage(post)" :alt="post.destination || post.title" loading="lazy" @error="handlePostImageError(post)" />
+                <span v-else class="profile-post-cover-fallback">{{ post.destination || 'ROAMLY' }}</span>
+                <span class="profile-post-status">已发布</span>
+                <span class="profile-post-open">查看笔记 <b>↗</b></span>
+              </div>
+              <div class="profile-post-body">
+                <div class="profile-post-author">
+                  <span class="post-avatar"><img v-if="postAvatar(post)" :src="postAvatar(post)" alt="" /><span v-else>{{ postAuthor(post).slice(0, 1) }}</span></span>
+                  <span class="post-author-name">{{ postAuthor(post) }}</span>
+                  <span class="post-dot">·</span>
+                  <span>{{ post.destination || '旅行笔记' }}</span>
+                </div>
+                <h4>{{ post.title || '未命名旅行笔记' }}</h4>
+                <p class="profile-post-excerpt">{{ postExcerpt(post) }}</p>
+                <div v-if="postTags(post).length" class="profile-post-tags">
+                  <span v-for="tag in postTags(post).slice(0, 3)" :key="tag">{{ tag }}</span>
+                </div>
+                <div class="profile-post-footer">
+                  <span>♡ {{ postLikes(post) }}</span>
+                  <span>◌ {{ postComments(post) }}</span>
+                  <span class="profile-post-editable">可编辑笔记 <b>→</b></span>
+                </div>
+              </div>
+            </article>
+            <p v-if="!postsLoading && !ownPosts.length" class="profile-post-empty">还没有公开帖子，发布你的第一段旅程吧。</p>
+          </div>
+        </section>
+
+        <!-- 旅行偏好 -->
+        <section v-else class="panel prefs">
         <section class="palette-panel">
           <button class="palette-trigger" type="button" @click="paletteOpen ? closePalette() : paletteOpen = true">🎨 系统调色板 <span>{{ paletteOpen ? '收起' : '编辑' }}</span></button>
           <div v-if="paletteOpen" class="palette-popover">
@@ -597,7 +742,8 @@ onMounted(() => { loadSystemPalette(); load() })
             <el-form-item><el-checkbox v-model="form.notifyPriceChange">价格变动提醒</el-checkbox></el-form-item>
           </div>
         </el-form>
-      </section>
+        </section>
+      </div>
     </div>
 
   </main>
@@ -636,20 +782,178 @@ onMounted(() => { loadSystemPalette(); load() })
 .profile-head h1 { font: 34px "DM Serif Display", "Noto Sans SC"; color: var(--ink); margin: 0; }
 .sub { color: #687873; font-size: 14px; margin: 10px 0 0; }
 
-.layout { 
-  width: calc(100% - 40px); 
+.layout {
+  width: calc(100% - 40px);
   max-width: 1160px;
-  margin: 0 auto; 
-  flex: 1; min-height: 0;
-  display: grid; 
-  grid-template-columns: 320px 1fr; 
-  gap: 24px; 
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 24px;
   align-items: stretch;
   overflow: hidden;
 }
 
+/* 右侧自己的工作区：收起时只改变右侧，不会挤动左侧资料卡。 */
+.right-panel-column {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.right-panel-toolbar {
+  flex: 0 0 auto;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--card) 90%, var(--roam-soft));
+  box-shadow: var(--shadow-soft);
+}
+
+.right-panel-tabs { min-width: 0; display: flex; align-items: center; gap: 4px; }
+.right-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease, transform .18s ease;
+}
+.right-panel-tab:hover { color: var(--forest); background: var(--roam-soft); transform: translateY(-1px); }
+.right-panel-tab.active { background: var(--forest); color: #fff; box-shadow: 0 5px 14px color-mix(in srgb, var(--forest) 18%, transparent); }
+.right-panel-tab small { min-width: 18px; padding: 2px 5px; border-radius: 999px; background: color-mix(in srgb, currentColor 14%, transparent); font-size: 10px; text-align: center; }
+.tab-mark { font-size: 13px; line-height: 1; }
+.right-panel-collapse {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.right-panel-collapse:hover { border-color: var(--forest); color: var(--forest); background: var(--roam-soft); }
+.right-panel-collapse b { font-size: 14px; line-height: 1; }
+
+.right-panel-collapsed-card {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 128px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: var(--shadow-soft);
+}
+.right-panel-collapsed-card h3 { margin: 0; color: var(--ink); font-size: 22px; }
+.right-panel-collapsed-card p:not(.eyebrow) { margin-top: 7px; color: var(--ink-2); font-size: 12px; }
+.right-panel-collapsed-card > button {
+  flex: 0 0 auto;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--forest);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.right-panel-collapsed-card > button:hover { background: var(--forest-deep); transform: translateY(-1px); }
+
+.posts-panel {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: var(--shadow-soft);
+}
+.posts-panel-head { flex: 0 0 auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.posts-panel-head h3 { margin: 0; font-size: 22px; }
+.posts-panel-head p:not(.eyebrow) { margin: 6px 0 0; color: var(--ink-2); font-size: 12px; }
+.posts-panel-head button { border: 0; border-radius: 9px; padding: 10px 13px; background: var(--forest); color: #fff; font-weight: 800; cursor: pointer; }
+.posts-panel-head button:hover { background: var(--forest-deep); transform: translateY(-1px); }
+.profile-post-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 14px;
+  padding: 18px 8px 8px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--forest) 32%, var(--line)) transparent;
+}
+.profile-post-grid::-webkit-scrollbar { width: 8px; }
+.profile-post-grid::-webkit-scrollbar-track { background: transparent; }
+.profile-post-grid::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--forest) 32%, var(--line)); background-clip: padding-box; }
+.profile-post-grid::-webkit-scrollbar-thumb:hover { background: var(--forest); background-clip: padding-box; }
+.profile-post { overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.profile-post:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
+.profile-post:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; }
+.profile-post-cover { position: relative; aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; background: linear-gradient(135deg,var(--forest),var(--roam)); color: #fff; font: 20px 'DM Serif Display'; text-align: center; }
+.profile-post-cover img { width: 100%; height: 100%; object-fit: cover; }
+.profile-post-cover::after { content: ''; position: absolute; inset: 38% 0 0; background: linear-gradient(180deg, transparent, rgba(9, 35, 29, .52)); pointer-events: none; }
+.profile-post-cover-fallback { position: relative; z-index: 1; padding: 18px; font-size: 24px; }
+.profile-post-status { position: absolute; z-index: 1; top: 10px; left: 10px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.45); border-radius: 999px; background: rgba(255,255,255,.84); color: var(--forest); font: 800 10px/1 inherit; }
+.profile-post-open { position: absolute; z-index: 1; right: 12px; bottom: 11px; color: #fff; font-size: 11px; font-weight: 800; opacity: 0; transform: translateY(3px); transition: opacity .18s ease, transform .18s ease; }
+.profile-post-open b { margin-left: 4px; font-size: 14px; }
+.profile-post:hover .profile-post-open, .profile-post:focus-visible .profile-post-open { opacity: 1; transform: translateY(0); }
+.profile-post-body { padding: 13px 13px 11px; }
+.profile-post-author { display: flex; align-items: center; min-width: 0; gap: 6px; color: var(--ink-2); font-size: 10px; white-space: nowrap; }
+.post-avatar { flex: 0 0 22px; width: 22px; height: 22px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--roam-soft); color: var(--forest); font-size: 10px; font-weight: 900; }
+.post-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.post-author-name { max-width: 9em; overflow: hidden; color: var(--ink); font-weight: 800; text-overflow: ellipsis; }
+.post-dot { color: var(--ink-3); }
+.profile-post-body h4 { display: -webkit-box; overflow: hidden; margin: 10px 0 6px; color: var(--ink); font-size: 15px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.profile-post-excerpt { display: -webkit-box; overflow: hidden; min-height: 2.9em; margin: 0 0 10px; color: var(--ink-2); font-size: 11px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.profile-post-tags { display: flex; flex-wrap: wrap; gap: 5px; min-height: 21px; margin-bottom: 10px; }
+.profile-post-tags span { padding: 4px 7px; border-radius: 6px; background: var(--roam-soft); color: var(--forest); font-size: 10px; font-weight: 800; }
+.profile-post-footer { display: flex; align-items: center; gap: 10px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 10px; }
+.profile-post-editable { margin-left: auto; color: var(--roam); }
+.profile-post-editable b { margin-left: 3px; font-size: 12px; }
+.profile-post-empty { grid-column: 1 / -1; padding: 50px 10px; color: var(--ink-3); text-align: center; }
+
 /* 左：用户资料卡片 - 固定高度，内部滚动 */
 .profile-card {
+  min-width: 0;
+  min-height: 0;
   height: 100%;
   background: var(--card);
   border: 1px solid var(--line);
@@ -673,7 +977,10 @@ onMounted(() => { loadSystemPalette(); load() })
 
 /* 右：旅行偏好面板 - 固定高度，内部滚动 */
 .panel.prefs {
-  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  flex: 1 1 auto;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 24px;
@@ -880,7 +1187,10 @@ onMounted(() => { loadSystemPalette(); load() })
 .save-btn:disabled { opacity: .65; cursor: not-allowed; }
 
 @media (max-width: 800px) {
-  .layout { grid-template-columns: 1fr; }
+  .shell { height: auto; min-height: 100vh; overflow: auto; }
+  .layout { width: 100%; flex: none; grid-template-columns: 1fr; overflow: visible; }
+  .right-panel-column { height: 720px; overflow: visible; }
+  .right-panel-column.is-collapsed { height: auto; }
   .grid2, .grid3 { grid-template-columns: 1fr; }
 }
 </style>

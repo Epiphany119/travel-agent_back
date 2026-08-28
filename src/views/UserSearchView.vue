@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { searchUsers, requestFriend } from '@/api/user'
 const q=ref(''); const users=ref<any[]>([]); const loading=ref(false); const searched=ref(false)
+const router = useRouter()
+function openUser(id: string) { router.push(`/users/${encodeURIComponent(id)}`) }
+function imageUrl(value?: string) { const raw = String(value || '').trim(); if (!raw) return ''; if (/^(https?:|data:|blob:)/i.test(raw)) return raw; const base = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''); return `${base}${raw.startsWith('/') ? raw : `/${raw}`}` }
 async function search(){
   const keyword = q.value.trim()
   if (!keyword) { users.value = []; searched.value = false; return }
@@ -25,9 +29,12 @@ async function add(u:any){
     <p class="sub">用 8 位 Roamly ID 或昵称搜索用户。公开笔记无需加好友也能阅读。</p>
     <div class="search-box"><input v-model="q" placeholder="输入 8 位 ID / 昵称" @keyup.enter="search"/><button v-if="q" class="clear" aria-label="清除搜索" @click="q=''; users=[]; searched=false">×</button><button @click="search">搜索</button></div>
     <section v-loading="loading" class="results">
-      <article v-for="u in users" :key="u.public_id" class="user-card"><span class="avatar">{{(u.nickname||u.public_id).charAt(0)}}</span><div><b>{{u.nickname||'Roamly 用户'}}</b><small>ID · {{u.public_id}}</small></div><button @click="add(u)">加好友</button></article>
+      <article v-for="u in users" :key="u.public_id" class="user-card"><button class="avatar avatar-button" @click="openUser(u.public_id)"><img v-if="imageUrl(u.avatar)" :src="imageUrl(u.avatar)" alt=""/><span v-else>{{(u.nickname||u.public_id).charAt(0)}}</span></button><div @click="openUser(u.public_id)"><b>{{u.nickname||'Roamly 用户'}}</b><small>ID · {{u.public_id}}</small></div><button @click="add(u)">加好友</button></article>
       <p v-if="!loading&&!users.length" class="empty">{{ searched ? '没有找到匹配用户，换个关键词试试。' : '搜索一个用户，看看他走过的路。' }}</p>
     </section>
   </main>
 </template>
-<style scoped>.search-page{width:min(760px,calc(100% - 40px));margin:auto;padding:54px 0}.eyebrow{color:var(--sunset);font-size:10px;font-weight:800;letter-spacing:.16em}h1{font:38px 'DM Serif Display';margin:8px 0}.sub{color:var(--ink-2);font-size:14px}.search-box{display:flex;margin:28px 0 20px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:6px;transition:border-color .16s,box-shadow .16s}.search-box:focus-within{border-color:var(--forest);box-shadow:0 0 0 3px color-mix(in srgb,var(--forest) 12%,transparent)}.search-box input{flex:1;border:0;outline:0;padding:12px;font-size:14px;background:transparent;color:var(--ink)}.search-box button,.user-card button{border:0;background:var(--forest);color:#fff;border-radius:9px;padding:0 18px;font-weight:800;cursor:pointer}.search-box .clear{background:transparent;color:var(--ink-3);font-size:18px;padding:0 10px}.results{display:grid;gap:10px}.user-card{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--card);transition:transform .18s,box-shadow .18s}.user-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-soft)}.user-card div{flex:1}.user-card b,.user-card small{display:block}.user-card small{color:var(--ink-3);font-size:11px;margin-top:3px}.avatar{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--roam-soft);color:var(--forest);font-weight:800}.empty{color:var(--ink-3);text-align:center;padding:40px}</style>
+<style scoped>
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+</style>
+<style scoped>.search-page{width:min(760px,calc(100% - 40px));margin:auto;padding:54px 0}.eyebrow{color:var(--sunset);font-size:10px;font-weight:800;letter-spacing:.16em}h1{font:38px 'DM Serif Display';margin:8px 0}.sub{color:var(--ink-2);font-size:14px}.search-box{display:flex;margin:28px 0 20px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:6px;transition:border-color .16s,box-shadow .16s}.search-box:focus-within{border-color:var(--forest);box-shadow:0 0 0 3px color-mix(in srgb,var(--forest) 12%,transparent)}.search-box input{flex:1;border:0;outline:0;padding:12px;font-size:14px;background:transparent;color:var(--ink)}.search-box button,.user-card button{border:0;background:var(--forest);color:#fff;border-radius:9px;padding:0 18px;font-weight:800;cursor:pointer}.search-box .clear{background:transparent;color:var(--ink-3);font-size:18px;padding:0 10px}.results{display:grid;gap:10px}.user-card{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--card);transition:transform .18s,box-shadow .18s}.user-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-soft)}.user-card div{flex:1;cursor:pointer}.user-card b,.user-card small{display:block}.user-card small{color:var(--ink-3);font-size:11px;margin-top:3px}.avatar{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--roam-soft);color:var(--forest);font-weight:800}.avatar-button{flex:0 0 42px;padding:0;background:var(--roam-soft)!important;color:var(--forest)!important}.empty{color:var(--ink-3);text-align:center;padding:40px}</style>

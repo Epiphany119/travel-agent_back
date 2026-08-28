@@ -79,24 +79,36 @@ export function getSharedTravelNote(token: string) { return request.get<unknown,
 export function deleteTravelNote(id: number) { return request.delete<unknown, ApiResult<unknown>>('/user/travel-notes/' + id) }
 export interface SocialNote {
   id?: number; user_id?: string; userId?: string; travel_note_id?: number; travelNoteId?: number
+  source_note_id?: number; sourceNoteId?: number
   title: string; content: string; cover_url?: string; coverUrl?: string
   destination?: string; tags?: string[] | string; author?: string; author_name?: string; authorName?: string
-  author_avatar?: string; authorAvatar?: string; like_count?: number; likeCount?: number
+  author_avatar?: string; authorAvatar?: string; state_code?: string; stateCode?: string; moderation_status?: string; moderationStatus?: string; moderation_score?: number; moderationScore?: number; report_count?: number; reportCount?: number; like_count?: number; likeCount?: number
   comment_count?: number; commentCount?: number; favorite_count?: number; created_at?: string; updated_at?: string
 }
 export interface SocialComment {
-  id?: number; note_id?: number; user_id?: string; content: string; created_at?: string
+  id?: number; note_id?: number; user_id?: string; nickname?: string; avatar?: string; content: string; created_at?: string
+}
+export interface PublicUserProfile {
+  public_id?: string; publicId?: string; user_id?: string; userId?: string
+  nickname?: string; avatar?: string; bio?: string
 }
 export function searchUsers(q: string) { return request.get<unknown, ApiResult<any[]>>('/user/users/search', { params: { q } }) }
-export function listPublicNotes(page=0, size=20, q?: string, tag?: string) { return request.get<unknown, ApiResult<SocialNote[]>>('/user/social/notes', { params: { page, size, q, tag } }) }
+export function listPublicNotes(page=0, size=20, q?: string, tag?: string, ownerId?: string) { return request.get<unknown, ApiResult<SocialNote[]>>('/user/social/notes', { params: { page, size, q, tag, ownerId } }) }
 export function getPublicNote(id: number) { return request.get<unknown, ApiResult<SocialNote>>('/user/social/notes/' + id) }
+export function getPublicUserProfile(userId: string) { return request.get<unknown, ApiResult<PublicUserProfile>>('/user/users/' + encodeURIComponent(userId) + '/profile') }
 export function reactNote(id: number, type: 'like'|'favorite') { return request.post('/user/social/notes/' + id + '/reaction', null, { params: { type, userId: getCurrentUserId() } }) }
 export function listComments(id: number) { return request.get<unknown, ApiResult<SocialComment[]>>('/user/social/notes/' + id + '/comments') }
 export function addComment(id: number, content: string) { return request.post('/user/social/notes/' + id + '/comments', { content }, { params: { userId: getCurrentUserId() } }) }
 export function requestFriend(id: string, message='') { return request.post('/user/users/' + id + '/friend-request', { message }, { params: { from: getCurrentUserId() } }) }
-export function publishSocialNote(data: { userId: string; travelNoteId?: number; title: string; content: string; coverUrl?: string; destination?: string; tags?: string[]; authorName?: string; authorAvatar?: string }) { return request.post<unknown, ApiResult<SocialNote & { published?: boolean }>>('/user/social/notes', data) }
+export function publishSocialNote(data: { userId: string; travelNoteId?: number; privateNoteId?: number; sourceNoteId?: number; title: string; content: string; coverUrl?: string; destination?: string; tags?: string[]; authorName?: string; authorAvatar?: string }) { return request.post<unknown, ApiResult<SocialNote & { published?: boolean; message?: string; moderationDecision?: string; similarityScore?: number; reputationScore?: number; reviewRequired?: boolean }>>('/user/social/notes', data) }
 export function updateSocialNote(id: number, data: { userId?: string; title?: string; content?: string; coverUrl?: string; destination?: string; tags?: string[]; authorName?: string; authorAvatar?: string }) { return request.put<unknown, ApiResult<SocialNote>>('/user/social/notes/' + id, data, { params: { userId: getCurrentUserId() } }) }
 export function copySocialNote(id: number) { return request.post<unknown, ApiResult<TravelNote>>('/user/social/notes/' + id + '/copy', null, { params: { userId: getCurrentUserId() } }) }
+export function createNoteRevision(id: number, data: { sourceType: 'copy'|'invite'; privateNoteId?: number; title?: string; content?: string; coverUrl?: string; destination?: string; tags?: string[]; message?: string }) { return request.post<unknown, ApiResult<any>>(`/user/social/notes/${id}/revisions`, data, { params: { userId: getCurrentUserId() } }) }
+export function listNoteRevisions(id: number) { return request.get<unknown, ApiResult<any[]>>(`/user/social/notes/${id}/revisions`, { params: { userId: getCurrentUserId() } }) }
+export function reviewNoteRevision(id: number, status: 'approved'|'rejected'|'merged', message = '') { return request.put<unknown, ApiResult<any>>(`/user/social/revisions/${id}`, { status, message }, { params: { userId: getCurrentUserId() } }) }
+export function submitNoteRevision(id: number, data: { title: string; content: string; coverUrl?: string; destination?: string; tags?: string[] }) { return request.put<unknown, ApiResult<any>>(`/user/social/revisions/${id}/submit`, data, { params: { userId: getCurrentUserId() } }) }
+export function reportSocialNote(id: number, data: { sourceNoteId?: number; reason?: string; evidence?: string } = {}) { return request.post<unknown, ApiResult<any>>(`/user/social/notes/${id}/reports`, data, { params: { reporterId: getCurrentUserId() } }) }
+export function getReputation() { return request.get<unknown, ApiResult<{ userId: string; score: number; publishReviewThreshold: number }>>('/user/reputation', { params: { userId: getCurrentUserId() } }) }
 export function saveJourneyPoints(journeyId: number, points: JourneyPoint[]) {
   return request.post<unknown, ApiResult<unknown>>(`/user/journeys/${journeyId}/points`, points)
 }

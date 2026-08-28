@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 /** 卡片类型 */
@@ -20,13 +20,37 @@ export interface ContentTab {
 }
 
 const MAX_TABS = 10
+const STORAGE_KEY = 'roamly_content_tabs_v1'
+
+function restoreState() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const saved = raw ? JSON.parse(raw) : null
+    if (!saved || !Array.isArray(saved.tabs)) return { tabs: [], activeId: null, lastRoute: '/notes' }
+    const restoredTabs = saved.tabs.filter((tab: any) => tab && tab.id && tab.kind && tab.data)
+    return {
+      tabs: restoredTabs.slice(-MAX_TABS) as ContentTab[],
+      activeId: restoredTabs.some((tab: any) => tab.id === saved.activeId) ? saved.activeId : (restoredTabs.at(-1)?.id ?? null),
+      lastRoute: typeof saved.lastRoute === 'string' && saved.lastRoute !== '/card-detail' ? saved.lastRoute : '/notes'
+    }
+  } catch {
+    return { tabs: [], activeId: null, lastRoute: '/notes' }
+  }
+}
 
 /** 全局卡片多标签导航：覆盖中间主界面查看，关闭不影响底层页面（如旅行笔记） */
 export const useContentTabsStore = defineStore('contentTabs', () => {
-  const tabs = ref<ContentTab[]>([])
-  const activeId = ref<string | null>(null)
+  const restored = restoreState()
+  const tabs = ref<ContentTab[]>(restored.tabs)
+  const activeId = ref<string | null>(restored.activeId)
   /** 预览来源路由：关闭预览/全部标签后返回的位置（由 App.vue 在路由跳转时记录） */
-  const lastRoute = ref<string>('/notes')
+  const lastRoute = ref<string>(restored.lastRoute)
+
+  watch([tabs, activeId, lastRoute], () => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ tabs: tabs.value, activeId: activeId.value, lastRoute: lastRoute.value }))
+    } catch { /* 存储被禁用时仍保持内存内交互 */ }
+  }, { deep: true })
 
   const activeTab = computed<ContentTab | null>(
     () => tabs.value.find(t => t.id === activeId.value) ?? null
@@ -37,6 +61,10 @@ export const useContentTabsStore = defineStore('contentTabs', () => {
     const id = tab.id ?? `${tab.kind}#${tab.data?.keyId ?? tab.title}`
     const exists = tabs.value.find(t => t.id === id)
     if (exists) {
+      // 同一张卡片再次打开时合并列表页传入的最新快照，避免详情页显示旧内容。
+      exists.title = tab.title
+      exists.kind = tab.kind
+      exists.data = { ...exists.data, ...tab.data }
       activeId.value = id
       return
     }

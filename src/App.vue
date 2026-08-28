@@ -82,7 +82,7 @@ watch(
 watch(
   () => route.fullPath,
   (fp) => {
-    if (fp && fp !== '/card-detail' && fp !== '/auth') {
+    if (fp && route.path !== '/card-detail' && route.path !== '/auth') {
       contentTabs.lastRoute = fp
     }
   },

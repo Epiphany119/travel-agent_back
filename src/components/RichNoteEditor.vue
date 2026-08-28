@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadNoteImage } from '@/api/note'
 import { renderMarkdown, sanitizeRichHtml } from '@/utils/markdown'
@@ -30,6 +30,7 @@ const focused = ref(false)
 const activeColor = ref('#164E42')
 const activeHighlight = ref('#FFF0E8')
 const activeFontSize = ref('16px')
+const resizingImage = ref<{ element: HTMLImageElement; startX: number; startWidth: number } | null>(null)
 
 const textColors = ['#164E42', '#F27A4F', '#5378FF', '#8A5A9B', '#C24A62', '#1D2B27']
 const highlightColors = ['#FFF0E8', '#FFF7C7', '#E5F4EC', '#E8EEFF', '#F1E7F7', 'transparent']
@@ -55,8 +56,55 @@ onMounted(() => setEditorValue(props.modelValue))
 
 function emitContent() {
   if (!editor.value) return
-  emit('update:modelValue', sanitizeRichHtml(editor.value.innerHTML))
+  const clone = editor.value.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.is-selected').forEach((node) => node.classList.remove('is-selected'))
+  emit('update:modelValue', sanitizeRichHtml(clone.innerHTML))
 }
+
+function selectImage(image: HTMLImageElement | null) {
+  editor.value?.querySelectorAll('img.is-selected').forEach((node) => node.classList.remove('is-selected'))
+  image?.classList.add('is-selected')
+}
+
+function startImageResize(event: PointerEvent) {
+  if (!props.editable) return
+  const image = (event.target as HTMLElement).closest('img') as HTMLImageElement | null
+  if (!image) {
+    selectImage(null)
+    return
+  }
+  const rect = image.getBoundingClientRect()
+  const nearCorner = event.clientX >= rect.right - 28 && event.clientY >= rect.bottom - 28
+  selectImage(image)
+  if (!nearCorner) return
+  event.preventDefault()
+  event.stopPropagation()
+  resizingImage.value = { element: image, startX: event.clientX, startWidth: rect.width }
+  document.body.style.cursor = 'nwse-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('pointermove', resizeImage)
+  document.addEventListener('pointerup', finishImageResize, { once: true })
+}
+
+function resizeImage(event: PointerEvent) {
+  const state = resizingImage.value
+  if (!state) return
+  const maxWidth = Math.max(160, (editor.value?.clientWidth || 900) - 32)
+  const width = Math.max(120, Math.min(maxWidth, state.startWidth + event.clientX - state.startX))
+  state.element.style.width = `${Math.round(width)}px`
+  state.element.style.maxWidth = '100%'
+  emitContent()
+}
+
+function finishImageResize() {
+  document.removeEventListener('pointermove', resizeImage)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  if (resizingImage.value) emitContent()
+  resizingImage.value = null
+}
+
+onBeforeUnmount(finishImageResize)
 
 function normalizeFontTags() {
   if (!editor.value) return
@@ -192,7 +240,12 @@ function onDrop(event: DragEvent) {
 }
 
 function focus() { editor.value?.focus() }
-function getHtml() { return sanitizeRichHtml(editor.value?.innerHTML || '') }
+function getHtml() {
+  if (!editor.value) return ''
+  const clone = editor.value.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.is-selected').forEach((node) => node.classList.remove('is-selected'))
+  return sanitizeRichHtml(clone.innerHTML)
+}
 
 defineExpose({ editor, focus, getHtml })
 
@@ -266,8 +319,9 @@ defineExpose({ editor, focus, getHtml })
       @paste="onPaste"
       @drop="onDrop"
       @dragover.prevent
+      @pointerdown="startImageResize"
     ></div>
-    <div v-if="editable" class="editor-hint"><span>支持图片、颜色、字号与提示卡片</span><span>⌘ / Ctrl + S 保存</span></div>
+    <div v-if="editable" class="editor-hint"><span>支持图片、颜色、字号与提示卡片；选中图片后拖动右下角可调整大小</span><span>⌘ / Ctrl + S 保存</span></div>
   </section>
 </template>
 
@@ -346,7 +400,8 @@ defineExpose({ editor, focus, getHtml })
   :deep(ul), :deep(ol) { padding-left: 25px; margin: .5em 0 1em; }
   :deep(li) { margin: .35em 0; }
   :deep(hr) { border: 0; border-top: 2px solid var(--line); margin: 28px 0; }
-  :deep(img) { display: block; max-width: 100%; height: auto; border-radius: 14px; margin: 14px 0; box-shadow: 0 8px 24px color-mix(in srgb, var(--forest) 12%, transparent); }
+  :deep(img) { display: block; max-width: 100%; height: auto; border-radius: 14px; margin: 14px 0; box-shadow: 0 8px 24px color-mix(in srgb, var(--forest) 12%, transparent); cursor: pointer; }
+  :deep(img.is-selected) { outline: 2px solid var(--sunset); outline-offset: 4px; cursor: nwse-resize; }
 }
 .editor-hint { display: flex; justify-content: space-between; gap: 12px; padding: 8px 16px 10px; color: var(--ink-3, #8c9993); font-size: 10px; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
 .is-readonly .rich-content { min-height: 0; padding: 0; &:focus { background: transparent; } }

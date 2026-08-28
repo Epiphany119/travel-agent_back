@@ -21,6 +21,8 @@ export interface NoteDocument {
   shareToken?: string
   status?: string
   themeJson?: string
+  /** 复制来源的社区帖子 ID */
+  sourceSocialNoteId?: number
   /** 完整 Markdown 内容 */
   content?: string
   createdAt?: string
@@ -62,6 +64,7 @@ export async function createNote(data: NoteDocument): Promise<NoteDocument> {
     coverUrl: data.coverUrl,
     visibility: data.visibility,
     themeJson: data.themeJson,
+    sourceSocialNoteId: data.sourceSocialNoteId,
     content: data.content
   }
   return (await request.post<unknown, ApiEnvelope<NoteDocument>>(
@@ -77,6 +80,7 @@ export async function updateNote(id: number, data: NoteDocument): Promise<NoteDo
     coverUrl: data.coverUrl,
     visibility: data.visibility,
     themeJson: data.themeJson,
+    sourceSocialNoteId: data.sourceSocialNoteId,
     content: data.content
   }
   return (await request.put<unknown, ApiEnvelope<NoteDocument>>(

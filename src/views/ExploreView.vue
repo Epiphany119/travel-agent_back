@@ -2,18 +2,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentTabsStore } from '@/stores/contentTabs'
-import { addInspiration, copySocialNote, listInspirations, listPublicNotes, type Inspiration } from '@/api/user'
+import { createNoteRevision, listPublicNotes } from '@/api/user'
+import { createNote } from '@/api/note'
 import { ElMessage } from 'element-plus'
-const router = useRouter(); const query = ref(''); const active = ref('为你推荐'); const tabs = ['为你推荐','城市灵感','AI 路线','避坑经验']; const inspirations = ref<Inspiration[]>([]); const notes = ref<any[]>([]); const loading = ref(false)
-const legacyNotes = [
-  { title:'杭州 3 日慢旅行｜把西湖留给清晨', author:'Kao', city:'杭州', likes:'2.4k', image:'https://images.unsplash.com/photo-1536599018102-9f803c3e0a2a?auto=format&fit=crop&w=900&q=80', tags:['轻松漫游','人文'], content:'Day 1：抵达后入住西湖边的民宿，清晨错峰逛苏堤。\nDay 2：灵隐寺 + 龙井村徒步，感受茶山。\nDay 3：九溪烟树慢走，再喝一杯桂花龙井收尾。' },
-  { title:'珠海周末不踩雷：海边、老街和一顿好吃的', author:'Momo', city:'珠海', likes:'1.8k', image:'https://images.unsplash.com/photo-1507521292222-0f3f9d4e5d3d?auto=format&fit=crop&w=900&q=80', tags:['周末','美食'], content:'Day 1：情侣路骑车看海，傍晚去湾仔吃生蚝。\nDay 2：唐家湾老街散步，挖掘本地糖水铺与咖啡店。' },
-  { title:'川西 7 天｜把海拔和体力写进计划', author:'山野来信', city:'川西', likes:'986', image:'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=900&q=80', tags:['自驾','户外'], content:'Day 1：成都出发，适应海拔，住康定。\nDay 2-3：新都桥、塔公草原，边走边拍。\nDay 4-5：稻城亚丁深度徒步。\nDay 6-7：回程，留缓冲应对高反。' },
-  { title:'第一次京都，住哪里才能少走回头路？', author:'Nana', city:'京都', likes:'3.1k', image:'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=900&q=80', tags:['日本','路线'], content:'建议住在京都站或四条附近，交通便利。\nDay 1：清水寺、二年坂、三年坂。\nDay 2：伏见稻荷大社 + 宇治抹茶。\nDay 3：岚山竹林与保津川。' },
-  { title:'北京故宫深度游｜避开人流的路线', author:'旅人阿福', city:'北京', likes:'1.5k', image:'https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=900&q=80', tags:['历史','路线'], content:'建议工作日早 8 点入场，避开旅行团。\n路线：午门 → 太和殿 → 中和殿 → 保和殿 → 乾清宫 → 御花园 → 神武门。\n重点看珍宝馆和钟表馆。' },
-  { title:'江西萍乡武功山｜云端徒步', author:'山友日记', city:'萍乡', likes:'756', image:'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=900&q=80', tags:['徒步','户外'], content:'Day 1：沈子村上山，住金顶帐篷。\nDay 2：看日出后发云界徒步至明月山。\n全程约 18 公里，建议 2 天行程。' },
-  { title:'珠海日月贝大剧院周边打卡', author:'湾仔吃货', city:'珠海', likes:'1.2k', image:'https://images.unsplash.com/photo-1589394815804-964ed0be2eb5?auto=format&fit=crop&w=900&q=80', tags:['打卡','海边'], content:'傍晚日落时分最佳，贝壳建筑在夕阳下非常出片。\n周边可逛：野狸岛公园、情侣路、香洲湾。\n美食推荐：湾仔海鲜街、官也街。' }
-]
+const router = useRouter(); const query = ref(''); const active = ref('为你推荐'); const tabs = ['为你推荐','城市灵感','AI 路线','避坑经验']; const notes = ref<any[]>([]); const loading = ref(false)
 // 点击卡片 → 打开浏览器式卡片标签（覆盖中间查看，底层页面不受影响）
 const contentTabs = useContentTabsStore()
 function openNote(note: any) {
@@ -25,55 +17,60 @@ function openNote(note: any) {
       id: note.id,
       socialNoteId: note.id ? Number(note.id) : undefined,
       travelNoteId: note.travel_note_id || note.travelNoteId,
-      sourceType: note.id ? 'social' : 'legacy',
+      sourceType: 'social',
       title: note.title,
       content: note.content || note.title,
       image: note.image || '',
       author: note.author || '',
+      userId: note.user_id || note.userId || '',
+      authorAvatar: note.author_avatar || note.authorAvatar || '',
       city: note.city || '',
       tags: note.tags || [],
       likes: note.likes || ''
     }
   })
-  router.push('/card-detail')
+  router.push({ path: '/card-detail', query: { noteId: String(note.id) } })
 }
-function openInspiration(item: Inspiration) {
-  contentTabs.open({
-    kind: 'explore-spot',
-    title: `发现灵感-${item.name || '目的地'}`,
-    data: {
-      keyId: item.id ?? item.name ?? item.quote,
-      sourceType: 'inspiration',
-      inspirationId: item.id,
-      destination: item.name || '',
-      name: item.name || '',
-      content: item.quote || item.description || (`想去 ${item.name} 看看`),
-      image: item.imageUrl || '',
-      bestSeason: item.bestSeason || ''
-    }
-  })
-  router.push('/card-detail')
+function openUserProfile(userId?: string) {
+  if (userId) router.push(`/users/${encodeURIComponent(userId)}`)
 }
-
 async function saveFeedNote(note: any) {
   try {
-    if (note.name && !note.title) {
-      await addInspiration({ name: note.name, imageUrl: note.imageUrl || '', quote: note.quote || '', description: note.description || '', tags: note.tags || '', status: 0, priority: 1 })
-      ElMessage.success('已保存到灵感目的地')
-    } else if (note.id) {
-      await copySocialNote(Number(note.id))
-      ElMessage.success('已复制到我的笔记')
-    } else {
-      await addInspiration({ name: note.city || note.title, imageUrl: note.image || '', quote: note.title, description: note.content || '', tags: (note.tags || []).join(','), status: 0, priority: 1 })
-      ElMessage.success('已保存到灵感目的地')
+    if (note.id) {
+      const copied = await createNote({
+        title: `${note.title || '旅行笔记'} · 副本`, content: note.content || '',
+        destination: note.destination || note.city || '', coverUrl: note.cover_url || note.coverUrl || note.image || '',
+        visibility: 'private', sourceSocialNoteId: Number(note.id)
+      })
+      await createNoteRevision(Number(note.id), {
+        sourceType: 'copy', privateNoteId: copied.id, title: note.title, content: note.content || '',
+        coverUrl: note.cover_url || note.coverUrl || note.image || '',
+        destination: note.destination || note.city || '', tags: note.tags || []
+      })
+      ElMessage.success('已复制到我的笔记，发布时会进行版权检测')
     }
   } catch (error: any) {
     ElMessage.error(error?.message || '保存失败，请稍后重试')
   }
 }
+function normalizeImageUrl(value: unknown): string {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
+  const base = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  return `${base}${raw.startsWith('/') ? raw : `/${raw}`}`
+}
+function extractFirstImage(content: unknown): string {
+  const source = String(content || '')
+  const html = source.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1]
+  if (html) return html
+  const markdown = source.match(/!\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/i)?.[1]
+  return markdown || ''
+}
 function normalizeNote(note: any) {
   const tags = Array.isArray(note.tags) ? note.tags : typeof note.tags === 'string' ? (() => { try { return JSON.parse(note.tags) } catch { return note.tags.split(',').filter(Boolean) } })() : []
-  return { ...note, author: note.author || note.userId || note.user_id || '旅行者', city: note.destination || '', image: note.coverUrl || note.cover_url || '', likes: note.likeCount ?? note.like_count ?? 0, tags }
+  const image = normalizeImageUrl(note.coverUrl || note.cover_url || extractFirstImage(note.content))
+  return { ...note, author: note.author || note.authorName || note.author_name || '旅行者', city: note.destination || '', image, imageFailed: false, likes: note.likeCount ?? note.like_count ?? 0, tags }
 }
 const visibleNotes = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -84,14 +81,9 @@ const visibleNotes = computed(() => {
     return matchesQuery && matchesTab
   })
 })
-const visibleInspirations = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  return inspirations.value.filter(item => !q || [item.name, item.quote, item.description, item.tags].join(' ').toLowerCase().includes(q))
-})
 onMounted(async()=>{
   loading.value = true
-  try { notes.value = ((await listPublicNotes()).data || []).map(normalizeNote) } catch { notes.value = legacyNotes }
-  try { inspirations.value=(await listInspirations()).data||[] } catch {}
+  try { notes.value = ((await listPublicNotes()).data || []).map(normalizeNote) } catch { notes.value = [] }
   finally { loading.value = false }
 })
 </script>
@@ -101,7 +93,7 @@ onMounted(async()=>{
  <nav class="feed-tabs"><button v-for="tab in tabs" :key="tab" :class="{active:active===tab}" @click="active=tab">{{tab}}</button></nav>
  <section class="ai-callout"><div class="ai-symbol">✦</div><div><span class="eyebrow">ROAMLY AI PLANNER</span><h2>不知道去哪玩？把一句想法变成完整行程。</h2><p>“8 月，想去海边，预算 5000，两个人，节奏别太赶。”</p></div><button @click="router.push('/')">开始规划 <span>→</span></button></section>
  <section class="section-head"><div><span class="eyebrow">TRAVEL NOTES</span><h2>今日热门旅行</h2></div><button class="text-btn">查看全部 →</button></section>
- <section class="feed-grid" v-loading="loading"><article v-for="note in visibleNotes" :key="note.id || note.title" class="note-card" @click="openNote(note)"><div class="note-cover"><img v-if="note.image" :src="note.image" :alt="note.city" loading="lazy"/><span v-else class="note-cover-placeholder">{{ note.city || 'ROAMLY' }}</span><button class="save" title="复制到我的笔记" @click.stop="saveFeedNote(note)">☆</button><div class="hover-open">查看并编辑 →</div></div><div class="note-body"><div class="note-author"><span class="avatar">{{note.author.charAt(0)}}</span><span>{{note.author}}</span><span class="dot">·</span><span>{{note.city}}</span></div><h3>{{note.title}}</h3><div class="tag-row"><span v-for="tag in note.tags" :key="tag">{{tag}}</span></div><div class="note-meta"><span>♡ {{note.likes}}</span><span>◌ 可编辑笔记</span></div></div></article><article v-for="item in visibleInspirations" :key="'i'+item.id" class="note-card" @click="openInspiration(item)"><div class="note-cover note-cover--fallback"><span>{{item.name}}</span><button class="save" title="保存灵感" @click.stop="saveFeedNote(item)">☆</button><div class="hover-open">查看并编辑 →</div></div><div class="note-body"><div class="note-author"><span class="avatar">✦</span><span>Roamly 灵感</span></div><h3>{{item.quote || item.description || ('想去 '+item.name+' 看看')}}</h3><div class="tag-row"><span>{{item.bestSeason || '旅行灵感'}}</span></div></div></article><p v-if="!loading && !visibleNotes.length && !visibleInspirations.length" class="empty-feed">没有找到匹配内容，换个关键词试试。</p></section>
+ <section class="feed-grid" v-loading="loading"><article v-for="note in visibleNotes" :key="note.id" class="note-card" @click="openNote(note)"><div class="note-cover"><img v-if="note.image && !note.imageFailed" :src="note.image" :alt="note.city" loading="lazy" @error="note.imageFailed = true"/><span v-else class="note-cover-placeholder">{{ note.city || 'ROAMLY' }}</span><button class="save" title="复制到我的笔记" @click.stop="saveFeedNote(note)">☆</button><div class="hover-open">查看并编辑 →</div></div><div class="note-body"><div class="note-author"><button class="author-link" @click.stop="openUserProfile(note.user_id || note.userId)"><span class="avatar"><img v-if="normalizeImageUrl(note.author_avatar || note.authorAvatar)" :src="normalizeImageUrl(note.author_avatar || note.authorAvatar)" alt="" /><span v-else>{{note.author.charAt(0)}}</span></span><span>{{note.author}}</span></button><span v-if="note.city" class="dot">·</span><span>{{note.city}}</span></div><h3>{{note.title}}</h3><div class="tag-row"><span v-for="tag in note.tags" :key="tag">{{tag}}</span></div><div class="note-meta"><span>♡ {{note.likes}}</span><span>◌ 可编辑笔记</span></div></div></article><p v-if="!loading && !visibleNotes.length" class="empty-feed">暂时还没有已发布的旅行笔记，发布第一篇吧。</p></section>
  <section class="creator-strip"><div><span class="eyebrow">MAKE IT YOURS</span><h2>你的旅行，值得被认真记录。</h2><p>生成一份计划，出发后变成一篇可分享的旅行笔记。</p></div><button @click="router.push('/agent-panel')">和 Agent 一起开始 <span>→</span></button></section></main>
 </template>
 <style scoped>
@@ -118,4 +110,8 @@ onMounted(async()=>{
 .create-note-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); }
 .note-cover-placeholder { width: 100%; height: 100%; display: grid; place-items: center; padding: 20px; background: linear-gradient(135deg, var(--forest), var(--roam)); color: #fff; font: 20px 'DM Serif Display', serif; text-align: center; }
 .save { border: 0; }
+.author-link { display: inline-flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.author-link:hover { color: var(--forest); }
+.author-link .avatar { overflow: hidden; }
+.author-link .avatar img { width: 100%; height: 100%; object-fit: cover; }
 </style>
