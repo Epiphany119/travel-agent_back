@@ -47,4 +47,5 @@ fi
 echo "[3/3] 启动 Spring Boot..."
 echo "----------------------------------------"
 cd "$PROJECT_DIR"
-mvn spring-boot:run -pl travel-web
+# 同时构建并带入所有依赖模块，避免 travel-web 使用旧的业务模块 class/jar。
+mvn spring-boot:run -pl travel-web -am

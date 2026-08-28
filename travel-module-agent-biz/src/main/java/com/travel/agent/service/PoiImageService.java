@@ -40,18 +40,27 @@ public class PoiImageService {
             return List.of();
         }
         try {
-            // 1) 文本搜索：优先直接取 response 里自带的 photos（很多 POI 文本搜索就有图）
-            List<String> photos = searchPhotos(name, city);
-            if (!photos.isEmpty()) {
-                return photos;
-            }
-            // 2) 文本搜索没图则用 id 走详情接口兜底
-            String poiId = searchPoiId(name, city);
-            if (poiId == null) {
+            // 不只取第一个 POI：同名地点第一个结果可能没有照片，扩大候选能显著降低空图率。
+            List<JsonNode> pois = searchPois(name, city);
+            if (pois.isEmpty()) {
                 log.debug("未找到 POI: name={}, city={}", name, safe(city));
                 return List.of();
             }
-            return fetchDetailPhotos(poiId);
+
+            List<String> photos = new ArrayList<>();
+            for (JsonNode poi : pois) {
+                appendPhotos(photos, collectPhotos(poi.path("photos")));
+                if (photos.size() >= MAX_IMAGES) return photos.subList(0, MAX_IMAGES);
+            }
+
+            // 文本搜索没图时，再按多个候选 POI 的 id 查询详情，避免单个结果失效导致整组空图。
+            for (JsonNode poi : pois) {
+                String poiId = poi.path("id").asText(null);
+                if (poiId == null || poiId.isBlank()) continue;
+                appendPhotos(photos, fetchDetailPhotos(poiId));
+                if (photos.size() >= MAX_IMAGES) return photos.subList(0, MAX_IMAGES);
+            }
+            return photos;
         } catch (Exception e) {
             log.warn("获取地点图片失败: name={}, err={}", name, e.getMessage());
             return List.of();
@@ -126,6 +135,35 @@ public class PoiImageService {
             }
         }
         return urls;
+    }
+
+    private void appendPhotos(List<String> target, List<String> candidates) {
+        for (String url : candidates) {
+            if (url != null && !url.isBlank() && !target.contains(url)) {
+                target.add(url);
+                if (target.size() >= MAX_IMAGES) return;
+            }
+        }
+    }
+
+    private List<JsonNode> searchPois(String keywords, String city) {
+        String url = UriComponentsBuilder.fromHttpUrl(TEXT_SEARCH_URL)
+                .queryParam("key", apiKey)
+                .queryParam("keywords", keywords)
+                .queryParam("city", safe(city))
+                .queryParam("citylimit", true)
+                .queryParam("offset", 5)
+                .queryParam("page", 1)
+                .build().toUriString();
+
+        JsonNode root = restTemplate.getForObject(url, JsonNode.class);
+        if (root == null || !"1".equals(root.path("status").asText())) return List.of();
+        JsonNode pois = root.path("pois");
+        if (pois == null || !pois.isArray() || pois.isEmpty()) return List.of();
+
+        List<JsonNode> result = new ArrayList<>();
+        for (JsonNode poi : pois) result.add(poi);
+        return result;
     }
 
     private String safe(String s) {

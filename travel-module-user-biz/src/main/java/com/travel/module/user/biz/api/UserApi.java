@@ -519,6 +519,7 @@ public class UserApi {
         if (pref != null) {
             result.put("id", pref.getId());
             result.put("userId", pref.getUserId());
+            result.put("phone", pref.getPhone());
             result.put("preferenceType", pref.getPreferenceType());
             result.put("preferenceName", pref.getPreferenceName());
             result.put("favoriteDestinations", pref.getFavoriteDestinations());
