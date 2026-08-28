@@ -24,6 +24,8 @@ public class NoteDocumentResponse {
     private String themeJson;
     /** 完整 Markdown 内容 */
     private String content;
+    /** 复制来源的社区帖子 ID */
+    private Long sourceSocialNoteId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

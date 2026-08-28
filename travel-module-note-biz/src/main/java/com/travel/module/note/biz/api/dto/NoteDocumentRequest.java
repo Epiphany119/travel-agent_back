@@ -21,4 +21,6 @@ public class NoteDocumentRequest {
     private String themeJson;
     /** 完整 Markdown 内容 */
     private String content;
+    /** 复制来源的社区帖子 ID；仅用于记录版权来源 */
+    private Long sourceSocialNoteId;
 }

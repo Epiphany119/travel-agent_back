@@ -88,6 +88,7 @@ public class NoteApplicationService {
         }
         doc.setThemeJson(request.getThemeJson());
         doc.setContent(request.getContent());
+        doc.setSourceSocialNoteId(request.getSourceSocialNoteId());
         doc.setCreatedAt(LocalDateTime.now());
         doc.setUpdatedAt(doc.getCreatedAt());
         documentMapper.insert(doc);
@@ -137,6 +138,9 @@ public class NoteApplicationService {
         if (request.getContent() != null) {
             doc.setContent(request.getContent());
         }
+        if (request.getSourceSocialNoteId() != null) {
+            doc.setSourceSocialNoteId(request.getSourceSocialNoteId());
+        }
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
@@ -172,6 +176,7 @@ public class NoteApplicationService {
                 .status(doc.getStatus())
                 .themeJson(doc.getThemeJson())
                 .content(doc.getContent())
+                .sourceSocialNoteId(doc.getSourceSocialNoteId())
                 .createdAt(doc.getCreatedAt())
                 .updatedAt(doc.getUpdatedAt())
                 .build();

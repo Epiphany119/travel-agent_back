@@ -62,8 +62,15 @@ public class UserApi {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) String tag) {
-        return ApiResult.success(userBizService.listPublicNotes(page, size, q, tag));
+            @RequestParam(required = false) String tag,
+            @RequestParam(required = false) String ownerId) {
+        return ApiResult.success(userBizService.listPublicNotes(page, size, q, tag, ownerId));
+    }
+
+    /** 获取用户公开资料；个人主页只返回公开身份信息，不返回旅行偏好。 */
+    @GetMapping("/users/{userId}/profile")
+    public ApiResult<?> publicUserProfile(@PathVariable String userId) {
+        return ApiResult.success(userBizService.getPublicUserProfile(userId));
     }
 
     /**
@@ -120,6 +127,63 @@ public class UserApi {
             @RequestBody Map<String, String> body) {
         userBizService.addComment(id, userId, body.getOrDefault("content", ""));
         return ApiResult.success("OK");
+    }
+
+    /** 创建复制存档或协作 PR 请求。复制存档不会改变原帖，也不具备公开发布权限。 */
+    @PostMapping("/social/notes/{id}/revisions")
+    public ApiResult<?> createRevision(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "user_001") String userId,
+            @RequestBody Map<String, Object> body) {
+        return ApiResult.success(userBizService.createNoteRevision(id, userId, body));
+    }
+
+    @GetMapping("/social/notes/{id}/revisions")
+    public ApiResult<?> revisions(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "user_001") String userId) {
+        return ApiResult.success(userBizService.listNoteRevisions(id, userId));
+    }
+
+    @PutMapping("/social/revisions/{revisionId}/submit")
+    public ApiResult<?> submitRevision(
+            @PathVariable Long revisionId,
+            @RequestParam(defaultValue = "user_001") String userId,
+            @RequestBody Map<String, Object> body) {
+        return ApiResult.success(userBizService.submitNoteRevision(revisionId, userId, body));
+    }
+
+    /** 原作者审核协作版本；合并时才会更新 social_note 的公开内容和状态码。 */
+    @PutMapping("/social/revisions/{revisionId}")
+    public ApiResult<?> reviewRevision(
+            @PathVariable Long revisionId,
+            @RequestParam(defaultValue = "user_001") String userId,
+            @RequestBody Map<String, String> body) {
+        return ApiResult.success(userBizService.reviewNoteRevision(revisionId, userId, body.getOrDefault("status", "rejected"), body.getOrDefault("message", "")));
+    }
+
+    /** 原作者举报疑似侵权帖子；Agent 会先做相似度判定，高相似度自动下架，中高相似度进入平台队列。 */
+    @PostMapping("/social/notes/{id}/reports")
+    public ApiResult<?> reportSocialNote(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "user_001") String reporterId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        return ApiResult.success(userBizService.reportSocialNote(id, reporterId, body == null ? new HashMap<>() : body));
+    }
+
+    /** 获取当前用户信誉分。 */
+    @GetMapping("/reputation")
+    public ApiResult<?> reputation(@RequestParam(defaultValue = "user_001") String userId) {
+        return ApiResult.success(userBizService.getReputation(userId));
+    }
+
+    /** 平台后台审核队列中的帖子；普通用户端不调用此接口。 */
+    @PutMapping("/social/notes/{id}/platform-review")
+    public ApiResult<?> platformReview(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "platform") String reviewerId,
+            @RequestBody Map<String, String> body) {
+        return ApiResult.success(userBizService.reviewPlatformNote(id, reviewerId, body.getOrDefault("status", "rejected"), body.getOrDefault("message", "")));
     }
 
     /**

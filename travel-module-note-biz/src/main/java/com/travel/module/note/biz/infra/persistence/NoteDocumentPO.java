@@ -33,6 +33,8 @@ public class NoteDocumentPO {
     private String themeJson;
     /** 完整 Markdown 内容 */
     private String content;
+    /** 复制来源的社区帖子 ID；原创笔记为空 */
+    private Long sourceSocialNoteId;
     /** 创建时间 */
     private LocalDateTime createdAt;
     /** 更新时间 */
