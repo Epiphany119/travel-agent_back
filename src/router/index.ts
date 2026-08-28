@@ -5,7 +5,7 @@ const router = createRouter({
   routes: [
     { path: '/auth', name: 'Auth', component: () => import('@/views/AuthView.vue') },
     { path: '/explore', name: 'Explore', component: () => import('@/views/ExploreView.vue') },
-    { path: '/chat', name: 'Chat', component: () => import('@/views/ChatView.vue') },
+    { path: '/chat', name: 'Chat', component: () => import('@/views/PlannerHub.vue') },
     { path: '/users/search', name: 'UserSearch', component: () => import('@/views/UserSearchView.vue') },
     { path: '/users/:id', name: 'PublicUser', component: () => import('@/views/PublicUserView.vue') },
     { path: '/notes/:id', name: 'NoteDetail', component: () => import('@/views/NoteDetailView.vue') },
@@ -17,7 +17,7 @@ const router = createRouter({
     { path: '/journeys', name: 'Journeys', component: () => import('@/views/JourneyView.vue') },
     { path: '/journey-map', name: 'JourneyMap', component: () => import('@/views/JourneyMapView.vue') },
     { path: '/card-detail', name: 'CardDetail', component: () => import('@/views/CardDetailView.vue') },
-    { path: '/agent-panel', name: 'AgentPanel', component: () => import('@/views/AgentPanel.vue') }
+    { path: '/agent-panel', name: 'AgentPanel', redirect: { path: '/chat', query: { mode: 'agent' } } }
   ]
 })
 

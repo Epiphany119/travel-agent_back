@@ -10,7 +10,7 @@ async function savePlanAsInspiration() {
   if (!agent.plan || savingInspiration.value) return
   savingInspiration.value = true
   try {
-    const firstImage = Object.values(agent.imageMap)[0] || ''
+    const firstImage = Object.values(agent.imageMap).flat()[0] || ''
     await addInspiration({
       userId: getCurrentUserId(),
       name: agent.plan.destination || '未命名目的地',
@@ -68,9 +68,9 @@ async function savePlanAsInspiration() {
             <div v-if="agent.dayTabs[agent.activeDay].budget" class="weather-chip budget-chip"><span>💰</span><span>¥{{ agent.dayTabs[agent.activeDay].budget }}</span></div>
           </div>
           <div v-if="agent.currentActivities.length" class="activity-cards">
-            <article v-for="(activity, ai) in agent.currentActivities" :key="ai" class="activity-card" :class="{ 'has-image': !!agent.imageMap[activity.name] }">
+            <article v-for="(activity, ai) in agent.currentActivities" :key="ai" class="activity-card" :class="{ 'has-image': !!agent.imageMap[activity.name]?.length }">
               <div class="activity-card-media">
-                <img v-if="agent.imageMap[activity.name]" :src="agent.imageMap[activity.name]" :alt="activity.name" loading="lazy" />
+                <img v-if="agent.imageMap[activity.name]?.length" :src="agent.imageMap[activity.name][0]" :alt="activity.name" loading="lazy" @error="agent.dropImage(activity.name)" />
                 <span v-else class="activity-card-placeholder">📍</span>
               </div>
               <div class="activity-card-body">

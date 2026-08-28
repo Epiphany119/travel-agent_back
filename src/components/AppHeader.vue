@@ -1,36 +1,140 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentTabsStore } from '@/stores/contentTabs'
 import { useRightPanelStore } from '@/stores/rightPanel'
+import { searchUsers } from '@/api/user'
 import PanelOpenIcon from '@/assets/右边栏按钮-开.png'
 import PanelCloseIcon from '@/assets/右边栏按钮-关.png'
 
 const router = useRouter()
 const keyword = ref('')
+const userMatches = ref<any[]>([])
+const searchLoading = ref(false)
+const searchOpen = ref(false)
+const searchRoot = ref<HTMLElement | null>(null)
 const tabs = useContentTabsStore()
 const rightPanel = useRightPanelStore()
 const emit = defineEmits<{ (e: 'toggle-panel'): void }>()
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+let searchRequestId = 0
+
+function userId(user: any) {
+  return String(user?.public_id || user?.publicId || user?.user_id || user?.userId || '').trim()
+}
+
+function userName(user: any) {
+  return String(user?.nickname || user?.name || user?.username || userId(user) || '旅行者')
+}
+
+function userAvatar(value?: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
+  const base = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  return `${base}${raw.startsWith('/') ? raw : `/${raw}`}`
+}
+
+function invalidateSearch() {
+  searchRequestId += 1
+  userMatches.value = []
+  searchLoading.value = false
+}
+
+async function loadUserMatches(value: string) {
+  const requestId = ++searchRequestId
+  searchLoading.value = true
+  try {
+    const result = await searchUsers(value)
+    if (requestId === searchRequestId) userMatches.value = result.data || []
+  } catch {
+    if (requestId === searchRequestId) userMatches.value = []
+  } finally {
+    if (requestId === searchRequestId) searchLoading.value = false
+  }
+}
+
+watch(keyword, (value) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  const q = value.trim()
+  searchOpen.value = Boolean(q)
+  if (!q) {
+    invalidateSearch()
+    return
+  }
+  searchTimer = setTimeout(() => { void loadUserMatches(q) }, 180)
+})
+
+function openUser(user: any) {
+  const id = userId(user)
+  if (!id) return
+  searchOpen.value = false
+  keyword.value = ''
+  router.push(`/users/${encodeURIComponent(id)}`)
+}
 
 function search() {
   const q = keyword.value.trim()
-  if (q) router.push({ path: '/inspirations', query: { q } })
-  else router.push('/inspirations')
+  searchOpen.value = false
+  if (q) router.push({ path: '/users/search', query: { q } })
+  else router.push('/users/search')
 }
+
+function handleSearchFocus() {
+  searchOpen.value = Boolean(keyword.value.trim())
+}
+
+function handleOutsideClick(event: MouseEvent) {
+  if (!searchRoot.value?.contains(event.target as Node)) searchOpen.value = false
+}
+
+onMounted(() => document.addEventListener('click', handleOutsideClick))
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+  document.removeEventListener('click', handleOutsideClick)
+})
 </script>
 
 <template>
   <header class="app-header">
-    <div class="search">
+    <div ref="searchRoot" class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8" />
         <line x1="21" y1="21" x2="16.65" y2="16.65" />
       </svg>
       <input
         v-model="keyword"
-        placeholder="搜索目的地、旅程…"
+        placeholder="搜索用户、昵称或 ID…"
+        aria-label="搜索用户、昵称或 ID"
+        @focus="handleSearchFocus"
         @keyup.enter="search"
       />
+      <div v-if="searchOpen && keyword.trim()" class="search-popover" @mousedown.prevent>
+        <div class="search-popover-head">
+          <span>旅行同好</span>
+          <small>输入即匹配</small>
+        </div>
+        <div v-if="searchLoading" class="search-state">正在匹配用户…</div>
+        <button
+          v-for="user in userMatches"
+          :key="userId(user)"
+          type="button"
+          class="search-user"
+          @click="openUser(user)"
+        >
+          <span class="search-avatar">
+            <img v-if="userAvatar(user.avatar || user.avatar_url || user.avatarUrl)" :src="userAvatar(user.avatar || user.avatar_url || user.avatarUrl)" alt="" />
+            <span v-else>{{ userName(user).charAt(0) }}</span>
+          </span>
+          <span class="search-user-copy">
+            <b>{{ userName(user) }}</b>
+            <small>ID · {{ userId(user) }}</small>
+          </span>
+          <span class="search-user-arrow">↗</span>
+        </button>
+        <div v-if="!searchLoading && !userMatches.length" class="search-state">没有找到匹配用户</div>
+        <button type="button" class="search-more" @click="search">查看全部用户 →</button>
+      </div>
     </div>
 
     <!-- 嵌入式标签栏：仿 Chrome 标签风格，始终占位固定宽度 -->
@@ -93,8 +197,10 @@ function search() {
 
 /* 搜索框：透明、无胶囊背景，仅底部一条细线 */
 .search {
-  flex: 0 0 auto;
-  max-width: 320px;
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 180px;
+  max-width: 420px;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -117,7 +223,8 @@ function search() {
   }
 
   input {
-    width: 180px;
+    width: 100%;
+    min-width: 0;
     border: 0;
     background: transparent;
     outline: 0;
@@ -127,6 +234,78 @@ function search() {
     &::placeholder { color: rgba(255,255,255,0.5); }
   }
 }
+
+.search-popover {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 0;
+  width: min(360px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid var(--line, rgba(255,255,255,.2));
+  border-radius: 14px;
+  background: var(--card, #fffdf8);
+  color: var(--ink, #1d2b27);
+  box-shadow: 0 16px 34px rgba(8, 44, 37, .22);
+  z-index: 10020;
+}
+
+.search-popover-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px 8px;
+  color: var(--ink-2, #66756e);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+
+  small { color: var(--ink-3, #9aa9a2); font-size: 10px; font-weight: 600; }
+}
+
+.search-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: var(--roam-soft, #e5f0ea); }
+}
+
+.search-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--roam-soft, #e5f0ea);
+  color: var(--forest, #164e42);
+  font-size: 12px;
+  font-weight: 900;
+
+  img { width: 100%; height: 100%; object-fit: cover; }
+}
+
+.search-user-copy {
+  min-width: 0;
+  flex: 1;
+
+  b, small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  b { font-size: 12px; }
+  small { margin-top: 2px; color: var(--ink-3, #9aa9a2); font-size: 10px; }
+}
+
+.search-user-arrow { color: var(--ink-3, #9aa9a2); font-size: 16px; }
+.search-state { padding: 16px 8px; color: var(--ink-3, #9aa9a2); font-size: 12px; text-align: center; }
+.search-more { width: 100%; margin-top: 4px; padding: 8px; border: 0; border-top: 1px solid var(--line, #e7e0d2); background: transparent; color: var(--forest, #164e42); font-size: 11px; font-weight: 800; text-align: left; cursor: pointer; }
 
 /* 嵌入在 header 里的 Chrome 风格标签栏 */
 .inline-tabs {

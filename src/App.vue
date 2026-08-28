@@ -105,10 +105,8 @@ const defaultAssist: Record<string, { key: string; label: string }> = {
   '/explore': exploreAssist,
   '/inspirations': { key: 'inspirations', label: '灵感目的地' },
   '/journeys': { key: 'journeys', label: '我的旅程' },
-  '/chat': { key: 'chat', label: 'AI 旅行规划' },
+  '/chat': { key: 'planner', label: 'Agent 旅行规划' },
   '/journey-map': { key: 'map', label: '足迹地图' },
-  '/users/search': { key: 'search', label: '寻找同好' },
-  '/agent-panel': { key: 'agent', label: '互动式规划' }
 }
 
 let paletteLoaded = false
@@ -117,11 +115,6 @@ let paletteLoaded = false
 function onPanelToggle() {
   if (rightPanel.show) {
     rightPanel.close()
-    return
-  }
-  // 特殊：中间在 /agent-panel 时，右栏开对话、中间保持不动（结果留在中间）
-  if (route.path === '/agent-panel') {
-    rightPanel.openView('agent', '互动式规划')
     return
   }
   const assist = defaultAssist[route.path]

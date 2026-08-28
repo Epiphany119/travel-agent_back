@@ -1,18 +1,25 @@
 <script setup lang="ts">
-import { ref, computed, defineAsyncComponent, type Component } from 'vue'
+import { ref, computed, defineAsyncComponent, watch, type Component } from 'vue'
 import { useRightPanelStore } from '@/stores/rightPanel'
 
 const panel = useRightPanelStore()
 const linkLoading = ref(false)
 
+watch(
+  () => [panel.show, panel.type, panel.linkData?.url] as const,
+  ([show, type, url]) => {
+    linkLoading.value = Boolean(show && type === 'link' && url)
+  },
+  { immediate: true }
+)
+
 const viewComponents: Record<string, Component> = {
   explore: defineAsyncComponent(() => import('@/views/ExploreView.vue')),
-  chat: defineAsyncComponent(() => import('@/views/ChatView.vue')),
+  planner: defineAsyncComponent(() => import('@/views/PlannerHub.vue')),
   inspirations: defineAsyncComponent(() => import('@/views/InspirationView.vue')),
   journeys: defineAsyncComponent(() => import('@/views/JourneyView.vue')),
   search: defineAsyncComponent(() => import('@/views/UserSearchView.vue')),
-  map: defineAsyncComponent(() => import('@/views/JourneyMapView.vue')),
-  agent: defineAsyncComponent(() => import('@/views/AgentPanel.vue'))
+  map: defineAsyncComponent(() => import('@/views/JourneyMapView.vue'))
 }
 
 const activeComponent = computed(() => {
@@ -68,8 +75,10 @@ function copyUrl(url: string) {
               <span class="link-url" :title="panel.linkData.url">{{ panel.linkData.title }}</span>
             </div>
             <iframe
+              :key="panel.linkData.url"
               :src="panel.linkData.url"
               class="link-iframe"
+              :title="`网页预览：${panel.linkData.title || panel.linkData.url}`"
               frameborder="0"
               @load="linkLoading = false"
             ></iframe>
@@ -210,6 +219,7 @@ function copyUrl(url: string) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
 }
 
 .link-meta {

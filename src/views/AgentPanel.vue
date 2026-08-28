@@ -6,7 +6,7 @@ import { useAgentSessionStore } from '@/stores/agentSession'
 import PlanPane from './PlanPane.vue'
 
 /** 由 GlobalRightPanel 传入：告诉子组件它被渲染在右栏宿主里 */
-const props = defineProps<{ fromRightPanel?: boolean }>()
+const props = defineProps<{ fromRightPanel?: boolean; embedded?: boolean }>()
 
 const route = useRoute()
 const router = useRouter()
@@ -23,7 +23,7 @@ const layoutMode = computed<LayoutMode>(() => {
   // ★ 关键：GlobalRightPanel 通过 prop 显式告知宿主身份，
   // 因为两个实例共享同一个 Vue Router，route.path 都一样，无法靠路由区分。
   const isRightPanelHost = props.fromRightPanel === true
-  const inRoute = route.path === '/agent-panel'
+  const inRoute = props.embedded === true || route.path === '/agent-panel'
 
   // 被 GlobalRightPanel 渲染：显示对话 + 输入（不管中间路由是什么）
   if (isRightPanelHost) return 'chat-only'
@@ -73,7 +73,9 @@ watch(
   [layoutMode, () => agent.done],
   ([mode, done]) => {
     if (mode === 'chat-only' && done) {
-      router.push('/agent-panel')
+      if (route.path !== '/chat' || route.query.mode !== 'agent') {
+        router.push({ path: '/chat', query: { mode: 'agent' } })
+      }
     }
   },
   { immediate: true, flush: 'post' },

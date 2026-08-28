@@ -133,7 +133,7 @@ const daySections = computed<string[]>(() => {
   if (!md) return []
   const lines = md.split('\n')
   const headerIdx: number[] = []
-  lines.forEach((l, i) => { if (/第\s*\d+\s*天/.test(l)) headerIdx.push(i) })
+  lines.forEach((l, i) => { if (/(?:第\s*\d+\s*天|Day\s*\d+)/i.test(l)) headerIdx.push(i) })
   if (headerIdx.length === 0) return []
   const out: string[] = []
   headerIdx.forEach((start, k) => {
@@ -164,6 +164,54 @@ function highlightNames(md: string, names: string[]): string {
     }
     return out
   }).join('\n')
+}
+
+function normalizePlanActivity(activity: any) {
+  return {
+    ...activity,
+    type: activity?.type || 'sightseeing',
+    name: String(activity?.name || activity?.title || activity?.poiName || '待安排地点'),
+    location: activity?.location || activity?.address || '',
+    time: activity?.time || '',
+    transport: activity?.transport || activity?.travelMode || '',
+    notes: activity?.notes || activity?.description || activity?.reason || '',
+    cost: Math.round(Number(activity?.cost || activity?.price || 0)),
+    duration: Number(activity?.duration || 0),
+  }
+}
+
+function normalizePlanDays(result: any, requestedDays: number) {
+  const rawDays = Array.isArray(result?.dayPlans)
+    ? result.dayPlans
+    : Array.isArray(result?.days_plan)
+      ? result.days_plan
+      : Array.isArray(result?.days)
+        ? result.days
+        : []
+  return Array.from({ length: Math.max(requestedDays, rawDays.length, 1) }, (_, index) => {
+    const raw = rawDays[index] || {}
+    const rawActivities = Array.isArray(raw.activities) ? raw.activities : Array.isArray(raw.items) ? raw.items : []
+    return {
+      ...raw,
+      day: Number(raw.day || raw.dayNumber || index + 1),
+      date: raw.date || '',
+      theme: raw.theme || raw.title || `第${index + 1}天`,
+      dailyBudget: Number(raw.dailyBudget || raw.budget || 0),
+      weather: raw.weather || '',
+      temperature: raw.temperature || '',
+      activities: rawActivities.map(normalizePlanActivity),
+    }
+  })
+}
+
+function fallbackPlanText(planDays: any[]) {
+  return planDays.map((day, index) => {
+    const activities = day.activities || []
+    const body = activities.length
+      ? activities.map((activity: any) => `- **${activity.name}**${activity.location ? `（${activity.location}）` : ''}${activity.time ? ` · ${activity.time}` : ''}${activity.notes ? `\n  ${activity.notes}` : ''}`).join('\n')
+      : '- 保留机动时间，根据当天体力、天气和现场情况灵活调整。'
+    return [`## 第${day.day || index + 1}天 · ${day.theme || ''}`, day.date ? `**日期：** ${day.date}` : '', body].filter(Boolean).join('\n\n')
+  }).join('\n\n')
 }
 
 // 行程就绪后，按地点/餐厅名称懒加载图片
@@ -221,9 +269,9 @@ async function generateStream() {
         break
       case 'task_done': {
         console.log('[Plan] task_done received:', event.data)
-        const result = event.data
-        if (result && typeof result === 'object') {
-          const backendDays = result.dayPlans || []
+          const result = event.data?.data && typeof event.data.data === 'object' ? event.data.data : event.data
+          if (result && typeof result === 'object') {
+          const backendDays = normalizePlanDays(result, days.value)
 
           const streamDayPlans = backendDays.map((dp: any) => {
             const activities = dp.activities || []
@@ -303,7 +351,7 @@ async function generateStream() {
           }
 
           // 按"第1天/第2天/..."拆分 overview，分别塞入各 Tab
-          const overview = result.finalPlan || streamStore.fullText
+          const overview = String(result.finalPlan || result.overview || streamStore.fullText || '').trim() || fallbackPlanText(backendDays)
           console.log('[Plan] overview length:', overview?.length, 'first 200 chars:', overview?.slice(0, 200))
         }
         streamStore.isStreaming = false
@@ -352,7 +400,7 @@ function getMealType(time: string): string {
       <p class="sub">告诉我目的地、时间和预算。Roamly 会把复杂的功课，整理成可以立刻出发的每一天。</p>
       <div class="hero-actions">
         <button class="btn-primary" @click="scrollToPlanner">开始规划</button>
-        <button class="btn-ghost" @click="router.push('/inspirations')">探索灵感</button>
+        <button class="btn-ghost" @click="router.push('/explore')">探索灵感</button>
       </div>
       <div class="trust">
         <span>✦ 路线按区域串联</span>

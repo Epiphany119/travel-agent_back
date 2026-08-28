@@ -60,6 +60,8 @@ const revisions = ref<any[]>([])
 const commentDraft = ref('')
 const savedSnapshot = ref('')
 const published = ref(false)
+// 同一详情组件内快速切换卡片时，旧请求不能覆盖当前卡片。
+let hydrationToken = 0
 
 const dirty = computed(() => `${title.value}\n${destination.value}\n${coverUrl.value}\n${content.value}\n${tags.value.join(',')}` !== savedSnapshot.value)
 const isSocial = computed(() => !!socialNoteId.value)
@@ -146,29 +148,49 @@ function applySocial(note: SocialNote) {
   setTabData({ socialNoteId: socialNoteId.value, id: note.id, title: title.value, content: note.content, destination: destination.value, image: coverUrl.value, tags: tags.value })
 }
 
-async function loadComments() {
-  if (!socialNoteId.value) return
-  commentsLoading.value = true
-  try { comments.value = (await listComments(socialNoteId.value)).data || [] } catch { comments.value = [] }
-  finally { commentsLoading.value = false }
+function isCurrentHydration(token: number, tabId: string) {
+  return token === hydrationToken && tab.value?.id === tabId
 }
 
-async function loadRevisions() {
-  if (!socialNoteId.value) return
-  try { revisions.value = (await listNoteRevisions(socialNoteId.value)).data || [] } catch { revisions.value = [] }
+async function loadComments(noteId = socialNoteId.value, token = hydrationToken) {
+  if (!noteId) return
+  commentsLoading.value = true
+  try {
+    const result = await listComments(noteId)
+    if (token === hydrationToken && Number(socialNoteId.value) === Number(noteId)) comments.value = result.data || []
+  } catch {
+    if (token === hydrationToken && Number(socialNoteId.value) === Number(noteId)) comments.value = []
+  } finally {
+    if (token === hydrationToken && Number(socialNoteId.value) === Number(noteId)) commentsLoading.value = false
+  }
+}
+
+async function loadRevisions(noteId = socialNoteId.value, token = hydrationToken) {
+  if (!noteId) return
+  try {
+    const result = await listNoteRevisions(noteId)
+    if (token === hydrationToken && Number(socialNoteId.value) === Number(noteId)) revisions.value = result.data || []
+  } catch {
+    if (token === hydrationToken && Number(socialNoteId.value) === Number(noteId)) revisions.value = []
+  }
 }
 
 async function hydrate() {
   if (!tab.value) return
+  const token = ++hydrationToken
+  const tabId = tab.value.id
   hydrateFromTab()
   loading.value = true
   try {
     if (socialNoteId.value) {
       const result = await getPublicNote(socialNoteId.value)
+      if (!isCurrentHydration(token, tabId)) return
       if (result.data) applySocial(result.data)
-      void Promise.all([loadComments(), loadRevisions()])
+      const noteId = socialNoteId.value
+      void Promise.all([loadComments(noteId, token), loadRevisions(noteId, token)])
     } else if (noteDocumentId.value) {
       const note = await getNote(noteDocumentId.value)
+      if (!isCurrentHydration(token, tabId)) return
       title.value = note.title || title.value
       destination.value = note.destination || destination.value
       coverUrl.value = note.coverUrl || coverUrl.value
@@ -176,6 +198,7 @@ async function hydrate() {
       setTabData({ title: title.value, content: note.content, destination: destination.value, image: coverUrl.value, noteDocumentId: note.id })
     } else if (travelNoteId.value) {
       const note: any = (await getTravelNote(travelNoteId.value)).data
+      if (!isCurrentHydration(token, tabId)) return
       if (note) {
         title.value = note.title || title.value
         destination.value = note.destination || destination.value
@@ -187,27 +210,49 @@ async function hydrate() {
   } catch (error) {
     console.warn('[CardDetail] hydrate failed', error)
   } finally {
-    loading.value = false
-    savedSnapshot.value = `${title.value}\n${destination.value}\n${coverUrl.value}\n${content.value}\n${tags.value.join(',')}`
+    if (isCurrentHydration(token, tabId)) {
+      loading.value = false
+      savedSnapshot.value = `${title.value}\n${destination.value}\n${coverUrl.value}\n${content.value}\n${tags.value.join(',')}`
+    }
   }
 }
 
-watch(() => tab.value?.id, () => {
-  if (!tab.value) return
-  hydrate()
-  // 社区帖子打开即进入可编辑状态；其他卡片先保持阅读，减少误触。
-  editing.value = false
-}, { immediate: true })
-
-// 即使会话存储被清空，直接刷新 /card-detail?noteId=123 仍能从数据库恢复帖子。
-watch(() => route.query.noteId, (value) => {
+function socialNoteIdFromTab(candidate: ContentTab) {
+  if (candidate.kind !== 'explore-note') return null
+  const value = candidate.data?.socialNoteId ?? candidate.data?.social_note_id ?? candidate.data?.id
   const id = Number(value)
-  if (!id || tab.value) return
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+function openSocialTabFromRoute(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value
+  const id = Number(raw)
+  if (!Number.isInteger(id) || id <= 0) return
+
+  // 不能只判断“当前是否有标签”；必须按帖子 ID 找到目标标签并激活。
+  const existing = tabs.tabs.find((candidate) => socialNoteIdFromTab(candidate) === id)
+  if (existing) {
+    tabs.activate(existing.id)
+    return
+  }
+
   tabs.open({
+    id: `explore-note#social-${id}`,
     kind: 'explore-note',
     title: '社区笔记',
     data: { keyId: id, id, socialNoteId: id, sourceType: 'social' }
   })
+}
+
+// 即使会话存储被清空，直接刷新 /card-detail?noteId=123 仍能从数据库恢复帖子。
+// 这个 watcher 必须在 tab hydrate watcher 前注册，先把路由中的目标帖子激活。
+watch(() => route.query.noteId, openSocialTabFromRoute, { immediate: true })
+
+watch(() => tab.value?.id, () => {
+  if (!tab.value) return
+  void hydrate()
+  // 社区帖子打开即进入可编辑状态；其他卡片先保持阅读，减少误触。
+  editing.value = false
 }, { immediate: true })
 
 function syncTags(value: string) {

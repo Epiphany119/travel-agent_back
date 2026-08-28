@@ -178,24 +178,13 @@ function postAvatar(note: SocialNote) {
   return resolveUrl(value)
 }
 
-function postExcerpt(note: SocialNote) {
-  const text = String(note.content || '')
-    .replace(/<img[^>]*>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-    .replace(/[#>*_`~]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (!text) return '记录一段值得收藏的旅程。'
-  return text.length > 88 ? `${text.slice(0, 88)}…` : text
-}
-
 function postLikes(note: SocialNote) {
   return note.likeCount ?? note.like_count ?? 0
 }
 
-function postComments(note: SocialNote) {
-  return note.commentCount ?? note.comment_count ?? 0
+function openOwnPost(note: SocialNote) {
+  if (!note.id) return
+  router.push({ path: '/card-detail', query: { noteId: String(note.id) } })
 }
 
 async function loadOwnPosts() {
@@ -600,29 +589,25 @@ onMounted(() => { loadSystemPalette(); load(); loadOwnPosts() })
             <button type="button" @click="router.push('/publish')">＋ 发布笔记</button>
           </div>
           <div v-loading="postsLoading" class="profile-post-grid">
-            <article v-for="post in ownPosts" :key="post.id" class="profile-post" tabindex="0" @click="router.push({ path: '/card-detail', query: { noteId: String(post.id) } })" @keyup.enter="router.push({ path: '/card-detail', query: { noteId: String(post.id) } })">
+            <article v-for="post in ownPosts" :key="post.id" class="profile-post" tabindex="0" @click="openOwnPost(post)" @keyup.enter="openOwnPost(post)">
               <div class="profile-post-cover">
                 <img v-if="postImage(post)" :src="postImage(post)" :alt="post.destination || post.title" loading="lazy" @error="handlePostImageError(post)" />
-                <span v-else class="profile-post-cover-fallback">{{ post.destination || 'ROAMLY' }}</span>
-                <span class="profile-post-status">已发布</span>
-                <span class="profile-post-open">查看笔记 <b>↗</b></span>
+                <span v-else class="profile-post-cover-placeholder">{{ post.destination || 'ROAMLY' }}</span>
+                <button class="profile-post-save" type="button" title="打开笔记" @click.stop="openOwnPost(post)">☆</button>
+                <div class="profile-post-open">查看并编辑 →</div>
               </div>
               <div class="profile-post-body">
                 <div class="profile-post-author">
                   <span class="post-avatar"><img v-if="postAvatar(post)" :src="postAvatar(post)" alt="" /><span v-else>{{ postAuthor(post).slice(0, 1) }}</span></span>
-                  <span class="post-author-name">{{ postAuthor(post) }}</span>
-                  <span class="post-dot">·</span>
-                  <span>{{ post.destination || '旅行笔记' }}</span>
+                  <span>{{ postAuthor(post) }}</span><span class="post-dot">·</span><span>{{ post.destination || '旅行笔记' }}</span>
                 </div>
                 <h4>{{ post.title || '未命名旅行笔记' }}</h4>
-                <p class="profile-post-excerpt">{{ postExcerpt(post) }}</p>
-                <div v-if="postTags(post).length" class="profile-post-tags">
+                <div class="profile-post-tags">
                   <span v-for="tag in postTags(post).slice(0, 3)" :key="tag">{{ tag }}</span>
                 </div>
                 <div class="profile-post-footer">
                   <span>♡ {{ postLikes(post) }}</span>
-                  <span>◌ {{ postComments(post) }}</span>
-                  <span class="profile-post-editable">可编辑笔记 <b>→</b></span>
+                  <span>◌ 可编辑笔记</span>
                 </div>
               </div>
             </article>
@@ -910,7 +895,9 @@ onMounted(() => { loadSystemPalette(); load(); loadOwnPosts() })
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: max-content;
   align-content: start;
+  align-items: start;
   gap: 14px;
   padding: 18px 8px 8px 0;
   overflow-x: hidden;
@@ -924,30 +911,26 @@ onMounted(() => { loadSystemPalette(); load(); loadOwnPosts() })
 .profile-post-grid::-webkit-scrollbar-track { background: transparent; }
 .profile-post-grid::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--forest) 32%, var(--line)); background-clip: padding-box; }
 .profile-post-grid::-webkit-scrollbar-thumb:hover { background: var(--forest); background-clip: padding-box; }
-.profile-post { overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.profile-post { display: block; height: auto; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--card); cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 .profile-post:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
 .profile-post:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; }
-.profile-post-cover { position: relative; aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; background: linear-gradient(135deg,var(--forest),var(--roam)); color: #fff; font: 20px 'DM Serif Display'; text-align: center; }
+.profile-post-cover { position: relative; aspect-ratio: 4/3; overflow: hidden; background: var(--wash); }
 .profile-post-cover img { width: 100%; height: 100%; object-fit: cover; }
-.profile-post-cover::after { content: ''; position: absolute; inset: 38% 0 0; background: linear-gradient(180deg, transparent, rgba(9, 35, 29, .52)); pointer-events: none; }
-.profile-post-cover-fallback { position: relative; z-index: 1; padding: 18px; font-size: 24px; }
-.profile-post-status { position: absolute; z-index: 1; top: 10px; left: 10px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.45); border-radius: 999px; background: rgba(255,255,255,.84); color: var(--forest); font: 800 10px/1 inherit; }
-.profile-post-open { position: absolute; z-index: 1; right: 12px; bottom: 11px; color: #fff; font-size: 11px; font-weight: 800; opacity: 0; transform: translateY(3px); transition: opacity .18s ease, transform .18s ease; }
-.profile-post-open b { margin-left: 4px; font-size: 14px; }
-.profile-post:hover .profile-post-open, .profile-post:focus-visible .profile-post-open { opacity: 1; transform: translateY(0); }
-.profile-post-body { padding: 13px 13px 11px; }
-.profile-post-author { display: flex; align-items: center; min-width: 0; gap: 6px; color: var(--ink-2); font-size: 10px; white-space: nowrap; }
-.post-avatar { flex: 0 0 22px; width: 22px; height: 22px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--roam-soft); color: var(--forest); font-size: 10px; font-weight: 900; }
+.profile-post-cover-placeholder { width: 100%; height: 100%; display: grid; place-items: center; padding: 20px; background: linear-gradient(135deg, var(--forest), var(--roam)); color: #fff; font: 20px 'DM Serif Display', serif; text-align: center; }
+.profile-post-save { position: absolute; right: 12px; top: 10px; z-index: 2; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #ffffffd9; color: var(--ink); font-size: 20px; cursor: pointer; }
+.profile-post-save:hover { background: #fff; color: var(--forest); }
+.profile-post-open { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; padding: 18px 14px 12px; background: linear-gradient(to top, rgba(0,0,0,.55), transparent); color: #fff; font-size: 13px; font-weight: 700; opacity: 0; transition: opacity .18s ease; text-align: center; }
+.profile-post:hover .profile-post-open, .profile-post:focus-visible .profile-post-open { opacity: 1; }
+.profile-post-body { display: block; min-height: 126px; padding: 13px 14px 15px; background: var(--card); visibility: visible; opacity: 1; }
+.profile-post-author { display: flex; align-items: center; min-width: 0; gap: 7px; color: var(--ink-2); font-size: 11px; white-space: nowrap; }
+.post-avatar { display: grid; place-items: center; width: 23px; height: 23px; flex: 0 0 23px; overflow: hidden; border-radius: 50%; background: var(--roam-soft); color: var(--forest); font-weight: 800; }
 .post-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.post-author-name { max-width: 9em; overflow: hidden; color: var(--ink); font-weight: 800; text-overflow: ellipsis; }
+.profile-post-author > span:not(.post-avatar):first-of-type { max-width: 9em; overflow: hidden; color: var(--ink); font-weight: 800; text-overflow: ellipsis; }
 .post-dot { color: var(--ink-3); }
-.profile-post-body h4 { display: -webkit-box; overflow: hidden; margin: 10px 0 6px; color: var(--ink); font-size: 15px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.profile-post-excerpt { display: -webkit-box; overflow: hidden; min-height: 2.9em; margin: 0 0 10px; color: var(--ink-2); font-size: 11px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.profile-post-tags { display: flex; flex-wrap: wrap; gap: 5px; min-height: 21px; margin-bottom: 10px; }
-.profile-post-tags span { padding: 4px 7px; border-radius: 6px; background: var(--roam-soft); color: var(--forest); font-size: 10px; font-weight: 800; }
-.profile-post-footer { display: flex; align-items: center; gap: 10px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 10px; }
-.profile-post-editable { margin-left: auto; color: var(--roam); }
-.profile-post-editable b { margin-left: 3px; font-size: 12px; }
+.profile-post-body h4 { display: -webkit-box; overflow: hidden; margin: 10px 0; color: var(--ink); font-size: 15px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.profile-post-tags { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; margin-bottom: 12px; }
+.profile-post-tags span { padding: 4px 8px; border-radius: 6px; background: var(--roam-soft); color: var(--forest); font-size: 10px; font-weight: 700; }
+.profile-post-footer { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 10px; }
 .profile-post-empty { grid-column: 1 / -1; padding: 50px 10px; color: var(--ink-3); text-align: center; }
 
 /* 左：用户资料卡片 - 固定高度，内部滚动 */

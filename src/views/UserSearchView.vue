@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { searchUsers, requestFriend } from '@/api/user'
 const q=ref(''); const users=ref<any[]>([]); const loading=ref(false); const searched=ref(false)
 const router = useRouter()
+const route = useRoute()
 function openUser(id: string) { router.push(`/users/${encodeURIComponent(id)}`) }
 function imageUrl(value?: string) { const raw = String(value || '').trim(); if (!raw) return ''; if (/^(https?:|data:|blob:)/i.test(raw)) return raw; const base = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''); return `${base}${raw.startsWith('/') ? raw : `/${raw}`}` }
 async function search(){
@@ -15,6 +16,15 @@ async function search(){
   catch { ElMessage.error('搜索失败，请稍后重试') }
   finally { loading.value=false }
 }
+
+// 顶部搜索框的“查看全部用户”会带着关键词进入这里，保持结果页与顶部搜索状态一致。
+watch(() => route.query.q, (value) => {
+  const next = String(value || '').trim()
+  if (next === q.value) return
+  q.value = next
+  if (next) void search()
+  else { users.value = []; searched.value = false }
+}, { immediate: true })
 async function add(u:any){
   const message=await ElMessageBox.prompt('告诉对方你为什么想认识他','申请加好友',{inputPlaceholder:'例如：也喜欢慢旅行和摄影',confirmButtonText:'发送申请'}).catch(()=>null)
   if(message) {

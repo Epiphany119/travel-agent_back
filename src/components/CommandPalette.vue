@@ -16,7 +16,7 @@ function go(path: string) { router.push(path); close() }
 const commands = computed<Command[]>(() => [
   { id: 'notes', label: '打开旅行笔记', hint: '⌘ 1', icon: '▤', run: () => go('/notes') },
   { id: 'explore', label: '探索旅行灵感', hint: '⌘ 2', icon: '✦', run: () => go('/explore') },
-  { id: 'plan', label: '开始 AI 旅行规划', hint: '⌘ 3', icon: '◈', run: () => go('/chat') },
+  { id: 'plan', label: '开始 Agent 旅行规划', hint: '⌘ 3', icon: '◈', run: () => go('/chat') },
   { id: 'journeys', label: '查看我的旅程', hint: '⌘ 4', icon: '⌁', run: () => go('/journeys') },
   { id: 'profile', label: '打开个人主页', hint: '⌘ 5', icon: '◎', run: () => go('/profile') },
   { id: 'panel', label: rightPanel.show ? '收起右侧面板' : '打开右侧面板', hint: '⌘ B', icon: '◫', run: () => { rightPanel.show ? rightPanel.close() : rightPanel.openView('explore', '发现灵感'); close() } }

@@ -31,7 +31,8 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
   const done = ref(false)
   const plan = ref<any>(null)
   const activeDay = ref(0)
-  const imageMap = ref<Record<string, string>>({})
+  // 每个地点保留多个候选图，首图失效时 PlanPane 会自动切换下一张。
+  const imageMap = ref<Record<string, string[]>>({})
 
   // 问卷进度
   const stepIndex = ref(0)
@@ -187,6 +188,47 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
     }
   }
 
+  function normalizeActivity(activity: any) {
+    return {
+      ...activity,
+      name: String(activity?.name || activity?.title || activity?.poiName || '未命名地点'),
+      type: activity?.type || 'sightseeing',
+      location: activity?.location || activity?.address || '',
+      time: activity?.time || '',
+      notes: activity?.notes || activity?.description || activity?.reason || '',
+      cost: Number(activity?.cost || activity?.price || 0),
+      duration: Number(activity?.duration || 0),
+    }
+  }
+
+  function normalizeDayPlan(day: any, index: number) {
+    const activities = Array.isArray(day?.activities)
+      ? day.activities
+      : Array.isArray(day?.items)
+        ? day.items
+        : Array.isArray(day?.schedule)
+          ? day.schedule
+          : []
+    return {
+      ...day,
+      day: Number(day?.day || day?.dayNumber || index + 1),
+      date: day?.date || '',
+      theme: day?.theme || day?.title || '',
+      dailyBudget: Number(day?.dailyBudget || day?.budget || 0),
+      activities: activities.map(normalizeActivity),
+    }
+  }
+
+  function fallbackOverview(dayPlans: any[]) {
+    return dayPlans.map((day, index) => {
+      const activities = day.activities || []
+      const lines = activities.length
+        ? activities.map((activity: any) => `- **${activity.name}**${activity.location ? `（${activity.location}）` : ''}${activity.time ? ` · ${activity.time}` : ''}${activity.notes ? `\n  ${activity.notes}` : ''}`).join('\n')
+        : '- 保留机动时间，根据当天体力、天气和现场情况灵活调整。'
+      return [`## 第 ${day.day || index + 1} 天${day.theme ? ` · ${day.theme}` : ''}`, day.date ? `**日期：** ${day.date}` : '', lines].filter(Boolean).join('\n\n')
+    }).join('\n\n')
+  }
+
   function runA2APlan() {
     const dest = answers.value['destination'] || '未知'
     const days = parseInt(answers.value['days'] || '3')
@@ -208,21 +250,29 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
             break
           case 'token': break
           case 'task_done': {
-            const result = event.data
+            const result = event.data?.data && typeof event.data.data === 'object' ? event.data.data : event.data
             if (!result) {
               push({ role: 'info', content: '⚠️ 计划生成失败，请重试。' })
               sending.value = false
               return
             }
+            const rawDayPlans = Array.isArray(result.dayPlans)
+              ? result.dayPlans
+              : Array.isArray(result.days_plan)
+                ? result.days_plan
+                : Array.isArray(result.days)
+                  ? result.days
+                  : []
+            const normalizedDayPlans = Array.from({ length: Math.max(days, rawDayPlans.length, 1) }, (_, index) => normalizeDayPlan(rawDayPlans[index] || {}, index))
+            const overview = String(result.finalPlan || result.overview || '').trim() || fallbackOverview(normalizedDayPlans)
+
             plan.value = {
               destination: result.destination || dest,
-              days: result.dayPlans?.length || days,
+              days: normalizedDayPlans.length,
               budget,
               weather: result.weather || null,
-              dayPlans: (result.dayPlans || []).map((dp: any) => ({
-                day: dp.day || 1, date: dp.date || '', theme: dp.theme || '',
-                dailyBudget: dp.dailyBudget || 0, activities: dp.activities || [],
-              })),
+              overview,
+              dayPlans: normalizedDayPlans,
             }
             done.value = true
             sending.value = false
@@ -247,13 +297,29 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
     for (const dp of plan.value.dayPlans) {
       for (const activity of dp.activities || []) {
         if (!activity?.name || activity.type === 'rest' || imageMap.value[activity.name]) continue
-        try {
-          const res = await fetchPoiImages(activity.name, dest)
-          const url = (res?.imageUrls || []).find((u: string) => !Object.values(imageMap.value).includes(u))
-          if (url) imageMap.value[activity.name] = url
-        } catch { /* ignore */ }
+        const candidates = [...new Set([
+          activity.name,
+          `${dest} ${activity.name}`,
+          activity.location ? `${dest} ${activity.location}` : '',
+        ].map((value) => value.trim()).filter(Boolean))]
+        const urls: string[] = []
+        for (const keyword of candidates) {
+          try {
+            const res = await fetchPoiImages(keyword, dest)
+            for (const url of res?.imageUrls || []) {
+              if (/^https?:\/\//i.test(url) && !urls.includes(url)) urls.push(url)
+            }
+            if (urls.length >= 3) break
+          } catch { /* 尝试下一个关键词 */ }
+        }
+        imageMap.value[activity.name] = urls.slice(0, 3)
       }
     }
+  }
+
+  function dropImage(name: string) {
+    const current = imageMap.value[name] || []
+    imageMap.value = { ...imageMap.value, [name]: current.slice(1) }
   }
 
   function renderMarkdown(md: string) { return renderSafeMarkdown(md) }
@@ -280,6 +346,7 @@ export const useAgentSessionStore = defineStore('agentSession', () => {
     startQuestionnaire, reset, selectOption, send,
     push, greet, renderMarkdown,
     loadActivityImages,
+    dropImage,
     // cleanup
     dispose() { cancelStream?.() },
   }

@@ -29,16 +29,14 @@ const icons: Record<string, string> = {
 
 const navMain: NavItem[] = [
   { path: '/explore', label: '发现灵感', icon: 'compass', description: '浏览全球旅行灵感，发现新目的地与热门路线。' },
-  { path: '/', label: 'AI 旅行规划', icon: 'chat', description: '与 AI 助手对话，智能规划个性化旅行行程。' },
+  { path: '/chat', label: 'Agent 旅行规划', icon: 'chat', description: '用表单或对话 Agent 规划个性化旅行行程。' },
   { path: '/inspirations', label: '灵感目的地', icon: 'star', description: '收藏与管理你心仪的旅行目的地卡片。' },
   { path: '/notes', label: '旅行笔记', icon: 'note', description: '类飞书的 Markdown 在线笔记编辑器，支持导入、预览与主题定制。' },
   { path: '/journeys', label: '我的旅程', icon: 'map', description: '查看和管理你创建的旅行行程记录。' }
 ]
 
 const navMore: NavItem[] = [
-  { path: '/users/search', label: '寻找同好', icon: 'star', description: '搜索并发现与你品味相投的旅行同好。' },
   { path: '/journey-map', label: '足迹地图', icon: 'flag', description: '在地图上查看你去过的地方，留下足迹标记。' },
-  { path: '/agent-panel', label: '互动式规划', icon: 'chat', description: '使用互动式智能体深度规划你的旅程。' }
 ]
 
 function isActive(item: NavItem) {
@@ -60,30 +58,19 @@ const primaryNav = new Set(['/notes', '/profile'])
 /** 侧边栏入口 -> 右侧辅助面板视图 key 映射 */
 const viewKeyMap: Record<string, string> = {
   '/explore': 'explore',
-  '/chat': 'chat',
+  '/chat': 'planner',
   '/inspirations': 'inspirations',
   '/journeys': 'journeys',
-  '/users/search': 'search',
   '/journey-map': 'map',
-  '/agent-panel': 'agent'
 }
 
 function navPath(item: NavItem) {
-  return item.path === '/' ? '/chat' : item.path
+  return item.path
 }
 
 function navigate(item: NavItem) {
   const path = navPath(item)
   const viewKey = viewKeyMap[path]
-
-  // 特殊：互动式规划 — 三栏时中间进路由（显示结果）+ 右栏开对话
-  if (path === '/agent-panel') {
-    if (rightPanel.show && viewKey) {
-      rightPanel.openView(viewKey, item.label)
-    }
-    router.push(path)
-    return
-  }
 
   if (rightPanel.show && !primaryNav.has(item.path) && viewKey) {
     // 三栏模式 + 低优先级 -> 右侧辅助面板（中间保持笔记/预览）
@@ -118,7 +105,6 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
         :key="item.path"
         class="menu-item"
         :class="{ active: isActive(item) }"
-        :title="item.label"
         @click="navigate(item)"
       >
         <span class="ico" :aria-label="item.label" v-html="icons[item.icon]"></span>
@@ -133,7 +119,6 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
         :key="item.path"
         class="menu-item"
         :class="{ active: isActive(item) }"
-        :title="item.label"
         @click="navigate(item)"
       >
         <span class="ico" :aria-label="item.label" v-html="icons[item.icon]"></span>

@@ -13,6 +13,33 @@ import panelBtnRight from '@/assets/侧边栏按钮-右.png'
 import { useRightPanelStore } from '@/stores/rightPanel'
 import { getPreferences } from '@/api/user'
 import { parseSystemPalette } from '@/utils/theme'
+import {
+  DATABASE_WORKSPACE_ID,
+  createWorkspaceFileId,
+  createWorkspaceId,
+  loadEditorFileHandle,
+  loadEditorWorkspaceState,
+  persistEditorWorkspaceState,
+  saveEditorFileHandle,
+  type EditorWorkspace,
+  type EditorWorkspaceFile
+} from '@/utils/editorWorkspace'
+
+type LocalFileHandle = {
+  kind?: 'file'
+  name?: string
+  getFile: () => Promise<File>
+  queryPermission?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<PermissionState>
+  requestPermission?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<PermissionState>
+  createWritable?: () => Promise<{
+    write: (data: string) => Promise<void>
+    close: () => Promise<void>
+  }>
+}
+
+type FilePickerWindow = Window & {
+  showOpenFilePicker?: (options?: Record<string, unknown>) => Promise<LocalFileHandle[]>
+}
 
 // ─── Markdown 引擎 ──────────────────────────────────────
 const md = new MarkdownIt({
@@ -151,6 +178,255 @@ let outlineResizeCleanup: (() => void) | null = null
 
 const currentUserId = computed(() => getNoteUserId())
 
+// ─── 工作台 / 本地源文件工作区 ──────────────────────────────
+// 工作区索引和本地源文件快照写入 roamly_editor_workspaces_v1；工作区中新建的
+// 数据库文件正文仍写入 note_document，两条数据流保持分离。
+const savedWorkspaceState = loadEditorWorkspaceState()
+const workspaces = ref<EditorWorkspace[]>(savedWorkspaceState.workspaces)
+const activeWorkspaceId = ref(savedWorkspaceState.activeWorkspaceId)
+const activeLocalFileId = ref<string | null>(savedWorkspaceState.activeFileId)
+const workbenchExpanded = ref(savedWorkspaceState.expanded)
+const localFileMode = ref(savedWorkspaceState.localFileMode)
+const localSourceContent = ref('')
+const localEditorMode = ref<'rendered' | 'source' | 'collab'>(savedWorkspaceState.editorMode || 'rendered')
+// 协同模式单独维护预览文本，避免每次输入都重绘左侧 contenteditable 导致光标跳动。
+const collabPreviewContent = ref('')
+let localSnapshotTimer: ReturnType<typeof setTimeout> | undefined
+let documentRequestId = 0
+
+const activeWorkspace = computed(() => workspaces.value.find(workspace => workspace.id === activeWorkspaceId.value) || null)
+const activeLocalFile = computed(() => activeWorkspace.value?.files.find(file => file.id === activeLocalFileId.value) || null)
+const localMarkdownMode = computed(() => localFileMode.value && isMarkdownFile(activeLocalFile.value?.name || curDoc.title))
+const showRenderedEditor = computed(() => !localFileMode.value || (localMarkdownMode.value && (localEditorMode.value === 'rendered' || localEditorMode.value === 'collab')))
+const showCollabEditor = computed(() => localFileMode.value && localMarkdownMode.value && localEditorMode.value === 'collab')
+const renderedCollabPreview = computed(() => renderMarkdown(collabPreviewContent.value))
+watch(renderedCollabPreview, () => {
+  if (!showCollabEditor.value) return
+  void nextTick(() => syncCollaborationScroll(localSourceEditorRef.value, collabPreviewRef.value))
+})
+const workspaceOwnerName = computed(() => {
+  const storeName = String(userStore.nickname || '').trim()
+  if (storeName && storeName !== '旅人') return storeName
+  const cachedName = String(localStorage.getItem('roamly_username') || '').trim()
+  return cachedName || '我的'
+})
+const hasActiveDocument = computed(() => Boolean(curDoc.id || creating.value || localFileMode.value))
+const databaseDocs = computed(() => docs.value.filter(doc => {
+  const workspaceId = noteWorkspaceId(doc)
+  // 如果浏览器本地工作区索引被清理，仍把数据库文件兜底显示在“我的笔记”，
+  // 避免文件只因工作区元数据丢失就无法找回。
+  return !workspaceId || !workspaceById(workspaceId)
+}))
+
+function persistWorkspaceSession() {
+  persistEditorWorkspaceState({
+    workspaces: workspaces.value,
+    activeWorkspaceId: activeWorkspaceId.value,
+    activeFileId: activeLocalFileId.value,
+    localFileMode: localFileMode.value,
+    expanded: workbenchExpanded.value,
+    editorMode: localEditorMode.value
+  })
+}
+
+function workspaceById(id: string) {
+  return workspaces.value.find(workspace => workspace.id === id) || null
+}
+
+function workspaceFileById(id: string) {
+  for (const workspace of workspaces.value) {
+    const file = workspace.files.find(item => item.id === id)
+    if (file) return { workspace, file }
+  }
+  return null
+}
+
+function workspaceFileForDocument(workspace: EditorWorkspace, documentId: number) {
+  return workspace.files.find(file => file.storage === 'database' && file.documentId === documentId) || null
+}
+
+/** 把数据库中的工作区文件补回工作台索引；正文仍只从 note_document 读取。 */
+function ensureDatabaseWorkspaceFile(workspace: EditorWorkspace, doc: NoteDocument) {
+  if (doc.id == null) return null
+  const title = doc.title || '未命名文件.md'
+  const existing = workspaceFileForDocument(workspace, doc.id)
+  if (existing) {
+    existing.name = title
+    existing.sourcePath = `数据库文件 / ${title}`
+    existing.size = new Blob([doc.content || '']).size
+    existing.updatedAt = doc.updatedAt || existing.updatedAt
+    existing.storage = 'database'
+    existing.documentId = doc.id
+    return existing
+  }
+  const record: EditorWorkspaceFile = {
+    id: createWorkspaceFileId(workspace.id),
+    name: title,
+    sourcePath: `数据库文件 / ${title}`,
+    storage: 'database',
+    documentId: doc.id,
+    size: new Blob([doc.content || '']).size,
+    lastModified: 0,
+    // 数据库文件不依赖本地快照；snapshot 只为兼容工作台索引结构保留为空。
+    snapshot: '',
+    updatedAt: doc.updatedAt || new Date().toISOString()
+  }
+  workspace.files.unshift(record)
+  return record
+}
+
+function syncDatabaseWorkspaceFiles() {
+  for (const workspace of workspaces.value) {
+    if (workspace.id === DATABASE_WORKSPACE_ID) continue
+    const workspaceDocs = docs.value.filter(doc => doc.id != null && noteWorkspaceId(doc) === workspace.id)
+    const documentIds = new Set(workspaceDocs.map(doc => doc.id as number))
+    workspaceDocs.forEach(doc => ensureDatabaseWorkspaceFile(workspace, doc))
+    workspace.files = workspace.files.filter(file => file.storage !== 'database' || (file.documentId != null && documentIds.has(file.documentId)))
+  }
+}
+
+function toggleWorkbench() {
+  workbenchExpanded.value = !workbenchExpanded.value
+  persistWorkspaceSession()
+}
+
+async function createEditorWorkspace() {
+  try {
+    const result = await ElMessageBox.prompt('给新的本地文件工作区起个名字', '新增工作区', {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPlaceholder: '例如：旅行项目源码'
+    })
+    const name = String(result.value || '').trim()
+    if (!name) return
+    const timestamp = new Date().toISOString()
+    const workspace: EditorWorkspace = {
+      id: createWorkspaceId(),
+      name,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      files: []
+    }
+    workspaces.value.push(workspace)
+    flushLocalSnapshot()
+    activeWorkspaceId.value = workspace.id
+    activeLocalFileId.value = null
+    localFileMode.value = false
+    resetEditorState()
+    workbenchExpanded.value = true
+    persistWorkspaceSession()
+    ElMessage.success(`工作区「${name}」已创建`)
+  } catch {
+    // 用户取消输入
+  }
+}
+
+/** 在指定工作区创建一个真正落到 note_document 的空文件，并立即进入统一编辑器。 */
+async function createWorkspaceFile(targetWorkspaceId = activeWorkspaceId.value) {
+  if (targetWorkspaceId === DATABASE_WORKSPACE_ID) {
+    await addDoc('')
+    return
+  }
+  const workspace = workspaceById(targetWorkspaceId)
+  if (!workspace) return ElMessage.info('请先选择一个工作区')
+
+  try {
+    const result = await ElMessageBox.prompt('给新文件起个名字', '新增文件', {
+      confirmButtonText: '创建并编辑',
+      cancelButtonText: '取消',
+      inputValue: '未命名.md',
+      inputPlaceholder: '例如：珠海周末路线.md'
+    })
+    let title = String(result.value || '').trim()
+    if (!title) return
+    if (!/\.[a-z0-9]+$/i.test(title)) title += '.md'
+
+    flushLocalSnapshot()
+    documentRequestId++
+    localFileMode.value = false
+    activeWorkspaceId.value = workspace.id
+    activeLocalFileId.value = null
+    resetEditorState()
+    curDoc.title = title
+    creating.value = true
+    const created = await createNote({
+      title,
+      content: '',
+      visibility: 'private',
+      themeJson: themeToJson(workspace.id)
+    })
+    if (created.id == null) throw new Error('文件创建成功但没有返回文件 ID')
+    docs.value.unshift(created)
+    const record = ensureDatabaseWorkspaceFile(workspace, created)
+    workspace.updatedAt = new Date().toISOString()
+    if (record) activeLocalFileId.value = record.id
+    await openDoc(created.id)
+    // openDoc 会按工作区元数据恢复上下文；这里再显式写回一次，兼容旧后端未回显扩展元数据的情况。
+    activeWorkspaceId.value = workspace.id
+    activeLocalFileId.value = record?.id || null
+    workbenchExpanded.value = true
+    persistWorkspaceSession()
+    ElMessage.success(`文件「${title}」已创建，开始编辑吧`)
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close' || e?.message === 'cancel' || e?.message === 'close') return
+    if (e?.message) ElMessage.error(e.message)
+  } finally {
+    creating.value = false
+  }
+}
+
+function resetEditorState() {
+  currentId.value = null
+  curDoc.id = undefined
+  curDoc.title = ''
+  curDoc.destination = ''
+  curDoc.coverUrl = ''
+  curDoc.visibility = 'private'
+  curDoc.updatedAt = ''
+  curDoc.themeJson = ''
+  curDoc.content = ''
+  curDoc.sourceSocialNoteId = undefined
+  editorContent.value = ''
+  localSourceContent.value = ''
+  collabPreviewContent.value = ''
+  dirty.value = false
+  published.value = false
+}
+
+function closeLocalFileMode(clearDocument = true) {
+  if (localFileMode.value) flushLocalSnapshot()
+  localFileMode.value = false
+  activeLocalFileId.value = null
+  if (clearDocument && currentId.value == null && !creating.value) resetEditorState()
+  persistWorkspaceSession()
+}
+
+function selectWorkspace(id: string) {
+  const workspace = workspaceById(id)
+  if (!workspace) return
+  if (activeWorkspaceId.value !== id) flushLocalSnapshot()
+  activeWorkspaceId.value = id
+  activeLocalFileId.value = null
+  if (id === DATABASE_WORKSPACE_ID) {
+    closeLocalFileMode(false)
+    const currentIsDatabaseNote = currentId.value != null && databaseDocs.value.some(doc => doc.id === currentId.value)
+    if (!currentIsDatabaseNote) {
+      if (databaseDocs.value[0]?.id) void openDoc(databaseDocs.value[0].id)
+      else resetEditorState()
+    }
+    persistWorkspaceSession()
+    return
+  }
+
+  localFileMode.value = false
+  if (workspace.files.length > 0) {
+    void openWorkspaceFile(workspace.files[0].id)
+  } else {
+    resetEditorState()
+    persistWorkspaceSession()
+  }
+}
+
 // ─── 主题 ────────────────────────────────────────────────
 const theme = reactive({
   bg: '#ffffff',
@@ -186,12 +462,47 @@ function applyTheme() {
 }
 watch([theme, systemTheme, useSystemTheme], applyTheme, { deep: true })
 
-function themeToJson(): string {
-  return JSON.stringify({ bg: theme.bg, fg: theme.fg, accent: theme.accent, useSystemTheme: useSystemTheme.value })
+type NoteEditorMeta = {
+  editorWorkspaceId?: string
+  sourceType?: string
+  sourceNoteId?: number
+  [key: string]: unknown
+}
+
+function parseNoteMeta(json?: string): NoteEditorMeta {
+  if (!json) return {}
+  try {
+    const parsed = JSON.parse(json)
+    return parsed && typeof parsed === 'object' ? parsed as NoteEditorMeta : {}
+  } catch {
+    return {}
+  }
+}
+
+function noteWorkspaceId(doc?: Pick<NoteDocument, 'themeJson'> | null): string | null {
+  const value = String(parseNoteMeta(doc?.themeJson).editorWorkspaceId || '').trim()
+  return value || null
+}
+
+function themeToJson(workspaceId?: string): string {
+  const resolvedWorkspaceId = workspaceId || (currentId.value != null ? noteWorkspaceId(curDoc) : null)
+  const payload: NoteEditorMeta = {
+    bg: theme.bg,
+    fg: theme.fg,
+    accent: theme.accent,
+    useSystemTheme: useSystemTheme.value
+  }
+  if (resolvedWorkspaceId) payload.editorWorkspaceId = resolvedWorkspaceId
+  return JSON.stringify(payload)
 }
 
 async function toggleSystemTheme() {
   applyTheme()
+  if (localFileMode.value) {
+    // 本地源文件不携带 Roamly 笔记主题，切换主题只影响当前编辑器外观。
+    dirty.value = true
+    return
+  }
   // The checkbox represents an explicit preference, so persist it immediately.
   await saveDoc()
 }
@@ -210,7 +521,10 @@ function loadThemeFromJson(jsonStr?: string) {
 async function loadSystemTheme() {
   try {
     const result = await getPreferences()
-    Object.assign(systemTheme, parseSystemPalette(result.data?.systemThemeJson))
+    const profile = (result.data || {}) as { systemThemeJson?: string; name?: string; nickname?: string; username?: string }
+    Object.assign(systemTheme, parseSystemPalette(profile.systemThemeJson))
+    const profileName = String(profile.name || profile.nickname || profile.username || '').trim()
+    if (profileName) userStore.setNickname(profileName)
     applyTheme()
   } catch {}
 }
@@ -249,27 +563,63 @@ async function load() {
   loading.value = true
   try {
     docs.value = await listNotes()
-    if (currentId.value == null && docs.value.length > 0) {
-      await openDoc(docs.value[0].id!)
+    syncDatabaseWorkspaceFiles()
+    persistWorkspaceSession()
+    if (!localFileMode.value && currentId.value == null) {
+      // 刷新后优先恢复用户正在看的自定义工作区文件；空工作区保持空白，
+      // 不再被默认数据库笔记“抢回去”。
+      const selectedWorkspaceFile = activeWorkspaceId.value !== DATABASE_WORKSPACE_ID && activeLocalFileId.value
+        ? workspaceFileById(activeLocalFileId.value)
+        : null
+      if (selectedWorkspaceFile) {
+        await openWorkspaceFile(selectedWorkspaceFile.file.id)
+      } else if (activeWorkspaceId.value === DATABASE_WORKSPACE_ID && databaseDocs.value.length > 0) {
+        await openDoc(databaseDocs.value[0].id!)
+      }
     }
   } catch (e) { console.error(e) } finally { loading.value = false }
 }
 
-onMounted(() => {
-  load()
+async function restoreLocalWorkspaceFile() {
+  if (!localFileMode.value || !activeLocalFileId.value) return false
+  const stored = workspaceFileById(activeLocalFileId.value)
+  if (!stored || stored.workspace.id === DATABASE_WORKSPACE_ID) {
+    closeLocalFileMode()
+    return false
+  }
+  activateLocalFile(stored.workspace, stored.file)
+  return true
+}
+
+onMounted(async () => {
+  await restoreLocalWorkspaceFile()
+  await load()
   loadSystemTheme()
   applyTheme()
   document.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('beforeunload', persistBeforeUnload)
 })
 
 onBeforeUnmount(() => {
+  flushLocalSnapshot()
   document.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('beforeunload', persistBeforeUnload)
 })
 
 // ─── 打开笔记 ───────────────────────────────────────────
 async function openDoc(id: number) {
+  if (localFileMode.value) flushLocalSnapshot()
+  const requestId = ++documentRequestId
   try {
     const d = await getNote(id)
+    // 用户快速连续点击时，旧请求不能覆盖最后一次选择。
+    if (requestId !== documentRequestId) return
+    const docWorkspace = noteWorkspaceId(d) ? workspaceById(noteWorkspaceId(d) as string) : null
+    const workspaceFile = docWorkspace ? ensureDatabaseWorkspaceFile(docWorkspace, d) : null
+    localFileMode.value = false
+    activeWorkspaceId.value = docWorkspace?.id || DATABASE_WORKSPACE_ID
+    activeLocalFileId.value = workspaceFile?.id || null
+    persistWorkspaceSession()
     currentId.value = id
     curDoc.id = d.id
     curDoc.title = d.title || ''
@@ -282,6 +632,7 @@ async function openDoc(id: number) {
     curDoc.sourceSocialNoteId = d.sourceSocialNoteId
 
     editorContent.value = d.content || ''
+    collabPreviewContent.value = d.content || ''
     dirty.value = false
     published.value = false
 
@@ -291,6 +642,10 @@ async function openDoc(id: number) {
 
 // ─── 保存笔记 ────────────────────────────────────────────
 async function saveDoc(silent = false): Promise<NoteDocument | undefined> {
+  if (localFileMode.value) {
+    await saveLocalFile(silent)
+    return undefined
+  }
   syncLiveEditor()
   if (currentId.value == null) { await addDoc(); return undefined }
   saving.value = true
@@ -301,7 +656,7 @@ async function saveDoc(silent = false): Promise<NoteDocument | undefined> {
       destination: curDoc.destination || '',
       coverUrl: curDoc.coverUrl || '',
       visibility: curDoc.visibility || 'private',
-      themeJson: themeToJson(),
+      themeJson: themeToJson(noteWorkspaceId(curDoc) || undefined),
       sourceSocialNoteId: curDoc.sourceSocialNoteId
     }
     const d = await updateNote(currentId.value, payload as NoteDocument)
@@ -311,6 +666,8 @@ async function saveDoc(silent = false): Promise<NoteDocument | undefined> {
     curDoc.themeJson = d.themeJson || themeToJson()
     dirty.value = false
     docs.value = await listNotes()
+    syncDatabaseWorkspaceFiles()
+    persistWorkspaceSession()
     return d
   } catch (e: any) {
     console.error('Save failed:', e)
@@ -320,6 +677,10 @@ async function saveDoc(silent = false): Promise<NoteDocument | undefined> {
 
 /** 把当前文档发布到社区；内容仍保留在 note_document，社区只保存可展示快照。 */
 async function publishCurrentNote() {
+  if (localFileMode.value) {
+    ElMessage.info('本地源文件只支持编辑和回写，请使用“导入文件”后再发布到圈子')
+    return
+  }
   if (currentId.value == null) return ElMessage.info('请先选择一篇笔记')
   syncLiveEditor()
   if (!curDoc.title?.trim()) return ElMessage.warning('请先填写笔记标题')
@@ -353,6 +714,12 @@ async function publishCurrentNote() {
 }
 
 async function addDoc(initialContent = '') {
+  documentRequestId++
+  flushLocalSnapshot()
+  closeLocalFileMode(false)
+  activeWorkspaceId.value = DATABASE_WORKSPACE_ID
+  resetEditorState()
+  persistWorkspaceSession()
   // Initialize the editor state before the request completes so the toolbar
   // and title input remain present while the new document is being created.
   curDoc.title = '新笔记'
@@ -375,16 +742,19 @@ async function addDoc(initialContent = '') {
 }
 
 async function removeDoc() {
+  if (localFileMode.value) return ElMessage.info('本地源文件请在源文件工作区管理')
   if (currentId.value == null) return
   try {
+    const deletedId = currentId.value
     await ElMessageBox.confirm('确定删除这篇笔记吗？', '删除笔记', { type: 'warning' })
-    await deleteNote(currentId.value)
+    await deleteNote(deletedId)
+    for (const workspace of workspaces.value) {
+      workspace.files = workspace.files.filter(file => file.documentId !== deletedId)
+    }
     ElMessage.success('已删除')
-    currentId.value = null
-    curDoc.title = ''
-    curDoc.content = ''
-    curDoc.updatedAt = ''
-    editorContent.value = ''
+    resetEditorState()
+    activeWorkspaceId.value = DATABASE_WORKSPACE_ID
+    persistWorkspaceSession()
     await load()
   } catch {}
 }
@@ -411,18 +781,77 @@ function handlePreviewClick(e: MouseEvent) {
   }
 
   const title = linkEl.textContent?.trim() || url
+  const previewUrl = normalizeWebUrl(url)
+  if (!previewUrl) {
+    ElMessage.warning('这个链接不是可预览的网页地址')
+    return
+  }
   // 在全局右侧面板打开链接预览
-  rightPanel.openLink({ url, title, })
+  rightPanel.openLink({ url: previewUrl, title, })
+}
+
+/** 只允许网页协议进入 iframe，避免 Markdown 链接触发 javascript 等危险协议。 */
+function normalizeWebUrl(raw: string): string | null {
+  const value = String(raw || '').trim()
+  if (!value) return null
+  try {
+    const parsed = new URL(value, window.location.href)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null
+  } catch {
+    return null
+  }
 }
 
 function syncLiveEditor() {
   const el = liveEditorRef.value
   if (!el) return
-  editorContent.value = htmlToMarkdown(el)
+  const markdown = htmlToMarkdown(el)
+  editorContent.value = markdown
+  if (localFileMode.value) {
+    // 本地 Markdown 的排版编辑器和源码编辑器共用一份文本；这里是唯一的
+    // DOM → 源文件同步点，保存时不会把渲染后的 HTML 写进原文件。
+    localSourceContent.value = markdown
+    curDoc.content = markdown
+    if (showCollabEditor.value) collabPreviewContent.value = markdown
+    if (activeLocalFile.value && activeLocalFile.value.snapshot !== markdown) dirty.value = true
+    scheduleLocalSnapshot()
+  }
+}
+
+function handleLiveEditorInput() {
+  markDirty()
+  if (!localFileMode.value || !liveEditorRef.value) return
+  // 本地 Markdown 在排版视图输入时也即时更新快照，但不改 editorContent，
+  // 避免 v-html 每次按键重绘导致光标跳动。
+  const markdown = htmlToMarkdown(liveEditorRef.value)
+  localSourceContent.value = markdown
+  curDoc.content = markdown
+  if (showCollabEditor.value) collabPreviewContent.value = markdown
+  scheduleLocalSnapshot()
 }
 
 function markDirty() {
   dirty.value = true
+}
+
+function setLocalEditorMode(mode: 'rendered' | 'source' | 'collab') {
+  if (!localMarkdownMode.value) return
+  if (mode === 'source') {
+    // 先把当前排版编辑中的改动落到 Markdown，再切换到源码视图。
+    syncLiveEditor()
+    localSourceContent.value = editorContent.value
+  } else {
+    editorContent.value = localSourceContent.value
+    curDoc.content = localSourceContent.value
+    collabPreviewContent.value = localSourceContent.value
+  }
+  localEditorMode.value = mode
+  persistWorkspaceSession()
+  void nextTick(() => {
+    if (mode === 'rendered') liveEditorRef.value?.focus()
+    else localSourceEditorRef.value?.focus()
+    if (mode === 'collab') syncCollaborationScroll(localSourceEditorRef.value, collabPreviewRef.value)
+  })
 }
 
 /** 内容格式工具栏：保留当前选区后使用浏览器原生编辑命令，兼容 Markdown 内容。 */
@@ -619,6 +1048,42 @@ function insertImageAtEnd(url: string) {
   editorContent.value = (md ? md + '\n\n' : '') + '![](' + url + ')'
 }
 
+function syncLocalRenderedContent() {
+  if (!localFileMode.value) return
+  localSourceContent.value = editorContent.value
+  curDoc.content = editorContent.value
+  collabPreviewContent.value = editorContent.value
+  dirty.value = true
+  scheduleLocalSnapshot()
+}
+
+/** 源码视图下也保留插图入口，插入的是可迁移的 Markdown 图片语法。 */
+function insertLocalSourceImageAtCursor(url: string, mode: 'cursor' | 'end') {
+  const textarea = localSourceEditorRef.value
+  const source = localSourceContent.value
+  const pos = mode === 'cursor' && textarea
+    ? Math.min(textarea.selectionStart, source.length)
+    : source.length
+  const before = source.slice(0, pos)
+  const after = source.slice(pos)
+  const prefix = before && !before.endsWith('\n') ? '\n\n' : ''
+  const suffix = after && !after.startsWith('\n') ? '\n\n' : ''
+  const image = '![](' + url + ')'
+  const next = (before + prefix + image + suffix + after).replace(/\n{3,}/g, '\n\n')
+  localSourceContent.value = next
+  editorContent.value = next
+  curDoc.content = next
+  collabPreviewContent.value = next
+  dirty.value = true
+  scheduleLocalSnapshot()
+  void nextTick(() => {
+    if (!textarea) return
+    const nextPos = Math.min(before.length + prefix.length + image.length, next.length)
+    textarea.focus()
+    textarea.setSelectionRange(nextPos, nextPos)
+  })
+}
+
 /** 在 Markdown 中按图片地址回写尺寸 title="w=NNN" */
 function setImageWidthInMarkdown(src: string, w: number): string {
   const imgRe = /!\[[^\]]*\]\(([^)\s)]+|\([^)]*\))([^)]*)\)/g
@@ -645,8 +1110,14 @@ async function insertUploadedImage(file: File, mode: 'cursor' | 'end') {
   uploadingImage.value = true
   try {
     const url = await uploadNoteImage(file)
-    if (mode === 'cursor') insertImageAtCursor(url)
-    else insertImageAtEnd(url)
+    if (localFileMode.value && (!localMarkdownMode.value || localEditorMode.value === 'source' || localEditorMode.value === 'collab')) {
+      insertLocalSourceImageAtCursor(url, mode)
+    } else {
+      if (mode === 'cursor') insertImageAtCursor(url)
+      else insertImageAtEnd(url)
+      if (localFileMode.value) syncLocalRenderedContent()
+      else markDirty()
+    }
     ElMessage.success('图片已插入，记得点击保存')
   } catch (e: any) {
     ElMessage.error(e?.message || '图片上传失败')
@@ -703,6 +1174,7 @@ function handleEditorPointerDown(e: PointerEvent) {
       const w = Math.min(1000, Math.max(48, img.clientWidth))
       editorContent.value = setImageWidthInMarkdown(src, w)
     }
+    if (localFileMode.value) syncLocalRenderedContent()
     // 3) 静默保存：缩放即入库，避免用户忘记保存导致尺寸/位置丢失
     void saveDoc(true)
   }
@@ -712,13 +1184,317 @@ function handleEditorPointerDown(e: PointerEvent) {
 
 /** 图片是否可插入（已有文档或正在创建） */
 function imageEditable(): boolean {
-  return curDoc.id != null || creating.value
+  return localFileMode.value
+    ? Boolean(activeLocalFile.value)
+    : (curDoc.id != null || creating.value)
 }
 
 const mdInput = ref<HTMLInputElement | null>(null)
+const localFileInput = ref<HTMLInputElement | null>(null)
+const localImageInput = ref<HTMLInputElement | null>(null)
+const localSourceEditorRef = ref<HTMLTextAreaElement | null>(null)
+const collabPreviewRef = ref<HTMLElement | null>(null)
+let collabScrollSyncing = false
 const uploadingImage = ref(false)
 
 function openMdPicker() { mdInput.value?.click() }
+function openLocalImagePicker() { localImageInput.value?.click() }
+
+function isMarkdownFile(fileName: string) {
+  return /\.(md|markdown)$/i.test(fileName || '')
+}
+
+function handleLocalImageInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) void insertUploadedImage(file, 'cursor')
+}
+
+function localFilePath(file: File) {
+  const value = file as File & { webkitRelativePath?: string }
+  return String(value.webkitRelativePath || file.name || '未命名文件')
+}
+
+function localFileTitle(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, '') || fileName
+}
+
+function ensureLocalWorkspace(fileName: string) {
+  const current = activeWorkspace.value
+  if (current && current.id !== DATABASE_WORKSPACE_ID) return current
+
+  const timestamp = new Date().toISOString()
+  const workspace: EditorWorkspace = {
+    id: createWorkspaceId(),
+    name: `${localFileTitle(fileName)} 工作区`,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    files: []
+  }
+  workspaces.value.push(workspace)
+  activeWorkspaceId.value = workspace.id
+  return workspace
+}
+
+function activateLocalFile(workspace: EditorWorkspace, file: EditorWorkspaceFile) {
+  if (localFileMode.value && activeLocalFileId.value !== file.id) flushLocalSnapshot()
+  documentRequestId++
+  localFileMode.value = true
+  activeWorkspaceId.value = workspace.id
+  activeLocalFileId.value = file.id
+  currentId.value = null
+  creating.value = false
+  curDoc.id = undefined
+  curDoc.title = file.name
+  curDoc.destination = ''
+  curDoc.coverUrl = ''
+  curDoc.visibility = 'private'
+  curDoc.updatedAt = file.updatedAt
+  curDoc.themeJson = ''
+  curDoc.content = file.snapshot
+  curDoc.sourceSocialNoteId = undefined
+  localSourceContent.value = file.snapshot
+  editorContent.value = file.snapshot
+  collabPreviewContent.value = file.snapshot
+  if (isMarkdownFile(file.name)) {
+    // 恢复当前文件上一次使用的视图；新文件默认进入排版编辑。
+    const restoringSameFile = savedWorkspaceState.activeFileId === file.id
+    localEditorMode.value = restoringSameFile && savedWorkspaceState.editorMode
+      ? savedWorkspaceState.editorMode
+      : 'rendered'
+  } else {
+    localEditorMode.value = 'source'
+  }
+  dirty.value = false
+  published.value = false
+  persistWorkspaceSession()
+}
+
+async function rememberLocalFile(file: File, handle?: LocalFileHandle | null) {
+  const workspace = ensureLocalWorkspace(file.name)
+  const path = localFilePath(file)
+  let record = workspace.files.find(item => item.sourcePath === path && item.name === file.name)
+  const timestamp = new Date().toISOString()
+  if (!record) {
+    record = {
+      id: createWorkspaceFileId(workspace.id),
+      name: file.name,
+      sourcePath: path,
+      storage: 'local',
+      size: file.size,
+      lastModified: file.lastModified,
+      snapshot: await file.text(),
+      updatedAt: timestamp
+    }
+    workspace.files.unshift(record)
+  } else {
+    record.storage = 'local'
+    record.documentId = undefined
+    record.size = file.size
+    record.lastModified = file.lastModified
+    record.snapshot = await file.text()
+    record.updatedAt = timestamp
+  }
+  workspace.updatedAt = timestamp
+  if (handle) {
+    try { await saveEditorFileHandle(record.id, handle) } catch { /* 句柄不可持久化时仍保留快照 */ }
+  }
+  activateLocalFile(workspace, record)
+  workbenchExpanded.value = true
+  persistWorkspaceSession()
+  ElMessage.success(`已打开 ${file.name}，当前为本地源文件模式`)
+}
+
+async function openLocalFile() {
+  const picker = (window as FilePickerWindow).showOpenFilePicker
+  if (picker) {
+    try {
+      const handles = await picker({
+        multiple: false,
+        excludeAcceptAllOption: false,
+        types: [{
+          description: '文本与源码文件',
+          accept: {
+            'text/plain': ['.md', '.markdown', '.txt', '.json', '.html', '.css', '.js', '.ts', '.java', '.sql', '.vue']
+          }
+        }]
+      })
+      const handle = handles[0]
+      if (handle) await rememberLocalFile(await handle.getFile(), handle)
+      return
+    } catch (error: any) {
+      if (error?.name === 'AbortError') return
+      // 部分浏览器实现了 picker 但拒绝了类型配置，继续走兼容输入框。
+    }
+  }
+  localFileInput.value?.click()
+}
+
+async function openLocalFileFromInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  await rememberLocalFile(file)
+}
+
+async function openWorkspaceFile(fileId: string) {
+  const stored = workspaceFileById(fileId)
+  if (!stored || stored.workspace.id === DATABASE_WORKSPACE_ID) return
+  if (stored.file.storage === 'database' && stored.file.documentId != null) {
+    await openDoc(stored.file.documentId)
+    return
+  }
+  // 先展示上次快照，避免文件句柄或权限检查让编辑器出现空白等待。
+  activateLocalFile(stored.workspace, stored.file)
+  if (stored.file.snapshot) return
+
+  const handle = await loadEditorFileHandle(stored.file.id) as LocalFileHandle | null
+  if (!handle || activeLocalFileId.value !== stored.file.id) return
+  try {
+    const file = await handle.getFile()
+    const source = await file.text()
+    stored.file.snapshot = source
+    stored.file.size = file.size
+    stored.file.lastModified = file.lastModified
+    stored.file.updatedAt = new Date().toISOString()
+    if (activeLocalFileId.value === stored.file.id) {
+      localSourceContent.value = source
+      editorContent.value = source
+      collabPreviewContent.value = source
+      curDoc.content = source
+    }
+    persistWorkspaceSession()
+  } catch {
+    ElMessage.info('文件路径或权限已变化，已保留上次本地快照')
+  }
+}
+
+function updateLocalSnapshot() {
+  if (!localFileMode.value || !activeLocalFile.value) return
+  const file = activeLocalFile.value
+  const timestamp = new Date().toISOString()
+  file.snapshot = localSourceContent.value
+  file.size = new Blob([localSourceContent.value]).size
+  file.updatedAt = timestamp
+  activeWorkspace.value!.updatedAt = timestamp
+  curDoc.updatedAt = timestamp
+  curDoc.content = localSourceContent.value
+  persistWorkspaceSession()
+}
+
+function scheduleLocalSnapshot() {
+  if (localSnapshotTimer) clearTimeout(localSnapshotTimer)
+  localSnapshotTimer = setTimeout(() => {
+    localSnapshotTimer = undefined
+    updateLocalSnapshot()
+  }, 350)
+}
+
+function flushLocalSnapshot() {
+  if (localSnapshotTimer) {
+    clearTimeout(localSnapshotTimer)
+    localSnapshotTimer = undefined
+  }
+  updateLocalSnapshot()
+  persistWorkspaceSession()
+}
+
+function persistBeforeUnload() {
+  flushLocalSnapshot()
+}
+
+function handleLocalSourceInput() {
+  editorContent.value = localSourceContent.value
+  collabPreviewContent.value = localSourceContent.value
+  curDoc.content = localSourceContent.value
+  dirty.value = true
+  scheduleLocalSnapshot()
+}
+
+/**
+ * 协同模式的滚动同步使用可滚动高度比例，而不是逐行硬编码：
+ * Markdown 源码和渲染后的段落高度不同，但用户在两侧拖动时仍能保持
+ * 大致位于同一段内容，长文和图片较多的文档也不会出现跳到末尾的问题。
+ */
+function syncCollaborationScroll(source: HTMLElement | null, target: HTMLElement | null) {
+  if (!source || !target || collabScrollSyncing) return
+  const sourceMax = Math.max(0, source.scrollHeight - source.clientHeight)
+  const targetMax = Math.max(0, target.scrollHeight - target.clientHeight)
+  if (sourceMax <= 0 || targetMax <= 0) return
+
+  const ratio = Math.min(1, Math.max(0, source.scrollTop / sourceMax))
+  collabScrollSyncing = true
+  target.scrollTop = ratio * targetMax
+  window.requestAnimationFrame(() => { collabScrollSyncing = false })
+}
+
+function handleCollabSourceScroll(event: Event) {
+  syncCollaborationScroll(event.currentTarget as HTMLElement, collabPreviewRef.value)
+}
+
+function handleCollabPreviewScroll(event: Event) {
+  syncCollaborationScroll(event.currentTarget as HTMLElement, localSourceEditorRef.value)
+}
+
+async function writeLocalFileDirectly(): Promise<boolean> {
+  if (!activeLocalFile.value) return false
+  const handle = await loadEditorFileHandle(activeLocalFile.value.id) as LocalFileHandle | null
+  if (!handle?.createWritable) return false
+  try {
+    let permission = await handle.queryPermission?.({ mode: 'readwrite' })
+    if (permission !== 'granted' && handle.requestPermission) {
+      permission = await handle.requestPermission({ mode: 'readwrite' })
+    }
+    if (permission && permission !== 'granted') return false
+    const writable = await handle.createWritable()
+    await writable.write(localSourceContent.value)
+    await writable.close()
+    return true
+  } catch {
+    return false
+  }
+}
+
+function downloadLocalFileFallback() {
+  const name = activeLocalFile.value?.name || curDoc.title || 'roamly-file.txt'
+  const url = URL.createObjectURL(new Blob([localSourceContent.value], { type: 'text/plain;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+async function saveLocalFile(silent = false) {
+  if (!localFileMode.value || !activeLocalFile.value) return
+  if (localMarkdownMode.value && localEditorMode.value === 'rendered') {
+    syncLiveEditor()
+  } else if (showCollabEditor.value) {
+    editorContent.value = localSourceContent.value
+    collabPreviewContent.value = localSourceContent.value
+    curDoc.content = localSourceContent.value
+  }
+  if (localSnapshotTimer) {
+    clearTimeout(localSnapshotTimer)
+    localSnapshotTimer = undefined
+  }
+  updateLocalSnapshot()
+  saving.value = true
+  try {
+    const written = await writeLocalFileDirectly()
+    if (!written) {
+      downloadLocalFileFallback()
+      if (!silent) ElMessage.warning('浏览器未提供源文件写权限，已下载同名文件；本地快照已保存')
+    } else if (!silent) {
+      ElMessage.success('源文件已回写，本地快照也已保存')
+    }
+    dirty.value = false
+  } finally {
+    saving.value = false
+  }
+}
 
 /** 导入入口：图片走上传插入，Markdown 走原导入逻辑 */
 async function importFile(event: Event) {
@@ -726,7 +1502,13 @@ async function importFile(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
+  if (localFileMode.value) closeLocalFileMode(false)
+  activeWorkspaceId.value = DATABASE_WORKSPACE_ID
+  persistWorkspaceSession()
   if (file.type.startsWith('image/')) {
+    // 从本地源文件模式导入图片时，先创建一篇数据库笔记，保证“导入文件”
+    // 永远有可写入的目标，不会因为当前没有 note_document 而静默失效。
+    if (currentId.value == null && !creating.value) await addDoc('')
     await insertUploadedImage(file, 'cursor')
     return
   }
@@ -866,15 +1648,53 @@ const wordCount = computed(() => {
 })
 
 // ─── 大纲提取 ───────────────────────────────────────────
+function cleanOutlineText(value: string): string {
+  let source = String(value || '')
+  if (!source) return ''
+  try {
+    // 富文本内容可能经历过一次 HTML 转义（例如 &lt;span ...&gt;），
+    // 因此最多解码两轮，确保目录只拿到可见文字而不是标签源码。
+    for (let round = 0; round < 2; round += 1) {
+      const holder = document.createElement('div')
+      holder.innerHTML = source
+      const text = holder.textContent || ''
+      if (!/<[a-z][\s\S]*>/i.test(text)) return text.replace(/\s+/g, ' ').trim()
+      source = text
+    }
+    return source.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+  } catch {
+    return source.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim()
+  }
+}
+
 const outline = computed(() => {
   const lines = editorContent.value.split('\n')
   const result: { level: number; text: string; line: number }[] = []
   lines.forEach((line, idx) => {
     const match = line.match(/^(#{1,3})\s+(.+)$/)
     if (match) {
-      result.push({ level: match[1].length, text: match[2], line: idx })
+      const text = cleanOutlineText(match[2])
+      if (text) result.push({ level: match[1].length, text, line: idx })
     }
   })
+
+  // 兼容直接保存的富文本：只取 h1~h3 的可见文字，绝不把 style/span 等
+  // 底层标签显示到目录里。
+  const htmlHeadings = Array.from(editorContent.value.matchAll(/<h([1-3])(?:\s[^>]*)?>([\s\S]*?)<\/h\1>/gi))
+  htmlHeadings.forEach((match, index) => {
+    const text = cleanOutlineText(match[2])
+    if (text && !result.some(item => item.text === text)) {
+      result.push({ level: Number(match[1]), text, line: index })
+    }
+  })
+
+  // 没有 Markdown/HTML 标题时，首个有意义的内容块作为文档入口。这样像
+  // `<span style="color:…">travel-agent : …</span>` 只显示干净文字。
+  if (!result.length) {
+    const firstLine = lines.map(line => cleanOutlineText(line.replace(/^\s*[-*+]\s+/, ''))).find(Boolean)
+    if (firstLine) result.push({ level: 1, text: firstLine.slice(0, 120), line: 0 })
+    else if (cleanOutlineText(curDoc.title)) result.push({ level: 1, text: cleanOutlineText(curDoc.title), line: -1 })
+  }
   return result
 })
 
@@ -882,8 +1702,12 @@ function scrollToHeading(line: number) {
   const item = outline.value.find(entry => entry.line === line)
   const container = liveEditorRef.value
   if (!container || !item) return
+  if (line < 0) {
+    container.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
   const headings = container.querySelectorAll('h1, h2, h3')
-  const heading = Array.from(headings).find(node => node.textContent?.trim() === item.text.trim()) as HTMLElement | undefined
+  const heading = Array.from(headings).find(node => cleanOutlineText(node.innerHTML) === item.text.trim()) as HTMLElement | undefined
   if (heading) {
     const cRect = container.getBoundingClientRect()
     const hRect = heading.getBoundingClientRect()
@@ -1066,9 +1890,29 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
           hidden 
           @change="importFile" 
         />
-        <button class="toolbar-btn" @click="openMdPicker" title="导入 Markdown 或图片">
-          📥 导入文件
-        </button>
+        <input
+          ref="localFileInput"
+          type="file"
+          accept=".md,.markdown,.txt,.json,.html,.css,.js,.ts,.java,.sql,.vue,text/*"
+          hidden
+          @change="openLocalFileFromInput"
+        />
+        <input
+          ref="localImageInput"
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          hidden
+          @change="handleLocalImageInput"
+        />
+        <div class="file-action-row">
+          <button class="toolbar-btn" @click="openMdPicker" title="导入 Markdown 或图片到数据库">
+            📥 导入文件
+          </button>
+          <button class="toolbar-btn local-file-btn" @click="openLocalFile" title="打开本地源文件，不写入笔记数据库">
+            ↗ 打开文件
+          </button>
+        </div>
+        <p class="file-action-hint">导入文件 = 数据库笔记 · 打开文件 = 本地源文件</p>
         <button 
           class="new-note-btn" 
           :style="{ background: effectiveTheme.accent }"
@@ -1079,27 +1923,98 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
       </div>
 
       <div class="workspace-mini">
-        <span class="workspace-name">
-          <span class="workspace-dot" :style="{ background: effectiveTheme.accent }">R</span>
-          Roamly 工作台 · {{ currentUserId }}
-        </span>
+        <div class="workspace-trigger-row">
+          <button class="workspace-trigger" :aria-expanded="workbenchExpanded" @click="toggleWorkbench">
+            <span class="workspace-name">
+              <span class="workspace-dot" :style="{ background: effectiveTheme.accent }">R</span>
+              <span class="workspace-name-text">{{ workspaceOwnerName }} 的 Roamly 工作台</span>
+            </span>
+            <span class="workspace-chevron">{{ workbenchExpanded ? '⌃' : '⌄' }}</span>
+          </button>
+        </div>
+        <div v-if="workbenchExpanded" class="workspace-dropdown">
+          <div class="workspace-entry-row" :class="{ active: activeWorkspaceId === DATABASE_WORKSPACE_ID }">
+            <button
+              type="button"
+              class="workspace-entry"
+              :class="{ active: activeWorkspaceId === DATABASE_WORKSPACE_ID }"
+              @click="selectWorkspace(DATABASE_WORKSPACE_ID)"
+            >
+              <span class="workspace-entry-icon">▤</span>
+              <span class="workspace-entry-copy"><b>我的笔记</b><small>数据库笔记 · 可发布</small></span>
+              <span class="workspace-entry-count">{{ databaseDocs.length }}</span>
+            </button>
+            <button
+              type="button"
+              class="workspace-entry-create"
+              title="在“我的笔记”中新建文件"
+              aria-label="在“我的笔记”中新建文件"
+              @click.stop="createWorkspaceFile(DATABASE_WORKSPACE_ID)"
+            >＋</button>
+          </div>
+          <template v-for="workspace in workspaces.filter(item => item.id !== DATABASE_WORKSPACE_ID)" :key="workspace.id">
+            <div class="workspace-entry-row" :class="{ active: activeWorkspaceId === workspace.id }">
+              <button
+                type="button"
+                class="workspace-entry"
+                :class="{ active: activeWorkspaceId === workspace.id }"
+                @click="selectWorkspace(workspace.id)"
+              >
+                <span class="workspace-entry-icon local">⌘</span>
+                <span class="workspace-entry-copy"><b>{{ workspace.name }}</b><small>编辑工作区 · {{ workspace.files.length }} 个文件</small></span>
+                <span class="workspace-entry-count">{{ workspace.files.length }}</span>
+              </button>
+              <button
+                type="button"
+                class="workspace-entry-create"
+                :title="`在“${workspace.name}”中新建文件`"
+                :aria-label="`在“${workspace.name}”中新建文件`"
+                @click.stop="createWorkspaceFile(workspace.id)"
+              >＋</button>
+            </div>
+            <div v-if="activeWorkspaceId === workspace.id && workspace.files.length" class="workspace-file-list">
+              <button v-for="file in workspace.files" :key="file.id" type="button" class="workspace-file-entry" :class="{ active: activeLocalFileId === file.id }" @click.stop="openWorkspaceFile(file.id)">
+                <span class="workspace-file-icon">·</span>
+                <span><b>{{ file.name }}</b><small>{{ file.storage === 'database' ? '数据库文件 · 可发布' : '本地快照' }} · {{ formatTime(file.updatedAt) }}</small></span>
+              </button>
+            </div>
+          </template>
+          <button type="button" class="workspace-create-btn" @click="createEditorWorkspace">＋ 新增工作区</button>
+        </div>
       </div>
 
       <div class="notes-list" v-loading="loading">
-        <button
-          v-for="d in docs"
-          :key="d.id"
-          class="note-item"
-          :class="{ active: currentId === d.id }"
-          :style="currentId === d.id ? { background: effectiveTheme.accent + '18', color: effectiveTheme.accent } : {}"
-          @click="openDoc(d.id!)"
-        >
-          <div class="note-title">{{ d.title || '未命名笔记' }}</div>
-          <div class="note-time">{{ formatTime(d.updatedAt) }}</div>
-        </button>
-        <p v-if="!loading && docs.length === 0" class="empty-hint">
-          还没有笔记，点上方新建。
-        </p>
+        <template v-if="activeWorkspaceId === DATABASE_WORKSPACE_ID">
+          <button
+            v-for="d in databaseDocs"
+            :key="d.id"
+            class="note-item"
+            :class="{ active: currentId === d.id }"
+            :style="currentId === d.id ? { background: effectiveTheme.accent + '18', color: effectiveTheme.accent } : {}"
+            @click="openDoc(d.id!)"
+          >
+            <div class="note-title">{{ d.title || '未命名笔记' }}</div>
+            <div class="note-time">{{ formatTime(d.updatedAt) }}</div>
+          </button>
+          <p v-if="!loading && databaseDocs.length === 0" class="empty-hint">
+            还没有笔记，点上方新建。
+          </p>
+        </template>
+        <template v-else>
+          <button
+            v-for="file in activeWorkspace?.files || []"
+            :key="file.id"
+            class="note-item local-note-item"
+            :class="{ active: activeLocalFileId === file.id }"
+            @click="openWorkspaceFile(file.id)"
+          >
+            <div class="note-title">⌘ {{ file.name }}</div>
+            <div class="note-time">{{ file.storage === 'database' ? '数据库文件 · 可发布' : '本地快照' }} · {{ formatTime(file.updatedAt) }}</div>
+          </button>
+          <p v-if="!activeWorkspace?.files.length" class="empty-hint">
+            工作区还没有文件，点击当前工作区右侧“＋”创建数据库文件，或点击“打开文件”编辑本地源文件。
+          </p>
+        </template>
       </div>
 
 <!--      <div class="panel-footer">-->
@@ -1125,9 +2040,9 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 
     <!-- ===== 中间编辑区 ===== -->
     <main class="center-panel">
-      <header class="editor-toolbar" v-if="curDoc.id || creating">
-        <div class="breadcrumb">
-          <span>我的笔记</span>
+      <header class="editor-toolbar" v-if="hasActiveDocument">
+          <div class="breadcrumb">
+          <span>{{ activeWorkspace?.name || '我的笔记' }}</span>
           <i>/</i>
           <b>{{ curDoc.title || '未命名笔记' }}</b>
         </div>
@@ -1138,21 +2053,29 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
               v-model="curDoc.title"
               class="title-input"
               placeholder="标题"
+              :readonly="localFileMode"
               @input="markDirty"
             />
             <input
+              v-if="!localFileMode"
               v-model="curDoc.destination"
               class="destination-input"
               placeholder="添加目的地（可选）"
               @input="markDirty"
             />
           </div>
+
+          <div v-if="localMarkdownMode" class="local-view-switch" role="tablist" aria-label="Markdown 编辑模式">
+            <button type="button" role="tab" :aria-selected="localEditorMode === 'rendered'" :class="{ active: localEditorMode === 'rendered' }" @click="setLocalEditorMode('rendered')">排版编辑</button>
+            <button type="button" role="tab" :aria-selected="localEditorMode === 'source'" :class="{ active: localEditorMode === 'source' }" @click="setLocalEditorMode('source')">源码</button>
+            <button type="button" role="tab" title="边编辑边预览" :aria-selected="localEditorMode === 'collab'" :class="{ active: localEditorMode === 'collab' }" @click="setLocalEditorMode('collab')">协同</button>
+          </div>
           
           <div class="tool-group">
           </div>
           
           <div class="tool-group">
-            <div class="theme-popover-wrap">
+            <div v-if="!localFileMode" class="theme-popover-wrap">
               <button class="tool-btn" :class="{ active: showRightPanel && selectionThemeVisible }" @click="showRightPanel = true; selectionThemeVisible = true" title="打开主题设置">🎨</button>
               <div v-if="themePopoverVisible" class="theme-popover">
                 <div class="popover-title">主题颜色</div>
@@ -1169,8 +2092,10 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
             <span class="save-indicator" :class="{ saving }">
               {{ saving ? '保存中…' : dirty ? '未保存' : published ? '已发布' : '已保存' }}
             </span>
+            <span v-if="localFileMode" class="local-source-badge" title="本地源文件不会写入 note_document">本地源文件 · 快照分离</span>
             <span v-if="copySourceNoteId" class="archive-indicator" :title="`该笔记复制自社区帖子 ${copySourceNoteId}，发布时会进行版权检测`">来源帖子 · {{ copySourceNoteId }}</span>
             <button
+              v-if="!localFileMode"
               class="publish-btn"
               :disabled="saving"
               title="发布到我的圈子"
@@ -1180,53 +2105,104 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
               class="save-btn" 
               :style="{ background: effectiveTheme.accent }"
               :disabled="saving"
-              @click="saveDoc()"
+              @click="localFileMode ? saveLocalFile() : saveDoc()"
             >
-              {{ saving ? '保存中…' : '保存' }}
+              {{ saving ? '保存中…' : localFileMode ? '写回文件' : '保存' }}
             </button>
           </div>
         </div>
       </header>
 
-      <div class="editor-body" v-if="curDoc.id || creating">
-        <div class="editor-area">
-          <div class="editor-main">
-            <div class="format-toolbar" role="toolbar" aria-label="笔记格式工具栏">
-              <select class="format-select" aria-label="段落样式" @change="runEditorCommand('formatBlock', ($event.target as HTMLSelectElement).value)">
-                <option value="p">正文</option>
-                <option value="h1">标题 1</option>
-                <option value="h2">标题 2</option>
-                <option value="h3">标题 3</option>
-              </select>
-              <select class="format-select" aria-label="字号" @change="runEditorCommand('fontSize', ($event.target as HTMLSelectElement).value)">
-                <option value="3">标准</option>
-                <option value="2">较小</option>
-                <option value="4">大</option>
-                <option value="5">特大</option>
-              </select>
-              <span class="format-separator"></span>
-              <button type="button" class="format-btn" title="加粗" @mousedown.prevent="runEditorCommand('bold')">B</button>
-              <button type="button" class="format-btn italic" title="斜体" @mousedown.prevent="runEditorCommand('italic')">I</button>
-              <button type="button" class="format-btn underline" title="下划线" @mousedown.prevent="runEditorCommand('underline')">U</button>
-              <button type="button" class="format-btn" title="无序列表" @mousedown.prevent="runEditorCommand('insertUnorderedList')">☷</button>
-              <button type="button" class="format-btn" title="引用" @mousedown.prevent="runEditorCommand('formatBlock', 'blockquote')">❝</button>
-              <button type="button" class="format-btn" title="提示卡片" @mousedown.prevent="insertEditorCallout">✦</button>
-              <button type="button" class="format-btn" title="分割线" @mousedown.prevent="insertEditorDivider">—</button>
-              <span class="format-separator"></span>
-              <button type="button" class="color-dot color-dot--forest" title="森林绿文字" @mousedown.prevent="runEditorCommand('foreColor', 'var(--forest)')"></button>
-              <button type="button" class="color-dot color-dot--sunset" title="日落橙文字" @mousedown.prevent="runEditorCommand('foreColor', 'var(--sunset)')"></button>
-              <button type="button" class="color-dot color-dot--blue" title="蓝色文字" @mousedown.prevent="runEditorCommand('foreColor', '#5378ff')"></button>
-              <span class="format-spacer"></span>
-              <button type="button" class="insert-image-tool" :disabled="uploadingImage" title="插入插图" @mousedown.prevent="openMdPicker">{{ uploadingImage ? '上传中…' : '＋ 插图' }}</button>
+      <div class="editor-body" v-if="hasActiveDocument">
+        <div v-if="!showRenderedEditor" class="local-source-editor-shell">
+          <div class="local-source-toolbar">
+            <span class="local-source-path">⌘ {{ activeLocalFile?.sourcePath || activeLocalFile?.name }}</span>
+            <div class="local-source-toolbar-actions">
+              <span>{{ localMarkdownMode ? 'Markdown 源码' : '源文件编辑' }} · 只保存本地快照</span>
+              <button type="button" class="local-insert-image-btn" :disabled="uploadingImage" @click="openLocalImagePicker">
+                {{ uploadingImage ? '上传中…' : '＋ 插图' }}
+              </button>
+              <button v-if="localMarkdownMode" type="button" class="local-source-switch-btn" @click="setLocalEditorMode('rendered')">切换排版</button>
             </div>
-
-            <div ref="liveEditorRef" class="preview-content markdown-body live-editor" contenteditable="true" spellcheck="false" v-html="renderedPreview" @input="markDirty" @blur="syncLiveEditor" @click="handlePreviewClick" @paste="handleEditorPaste" @drop="handleImageDrop" @dragover="handleDragOver" @pointerdown="handleEditorPointerDown"></div>
           </div>
+          <textarea ref="localSourceEditorRef" v-model="localSourceContent" class="local-source-editor" spellcheck="false" wrap="off" aria-label="本地源文件编辑器" @input="handleLocalSourceInput"></textarea>
+          <div class="local-source-footer"><span>修改会自动记录快照</span><span>⌘ / Ctrl + S 写回原文件</span></div>
+        </div>
+        <div v-else class="editor-area" :class="{ 'is-collaborative': showCollabEditor }">
+          <div class="editor-main">
+            <div v-if="showCollabEditor" class="collaboration-source-pane">
+              <div class="collaboration-source-header">
+                <span>源文件编辑</span>
+                <small>Markdown · 修改会实时同步到右侧</small>
+                <button type="button" class="local-insert-image-btn" :disabled="uploadingImage" @click="openLocalImagePicker">
+                  {{ uploadingImage ? '上传中…' : '＋ 插图' }}
+                </button>
+              </div>
+              <textarea
+                ref="localSourceEditorRef"
+                v-model="localSourceContent"
+                class="collaboration-source-editor"
+                spellcheck="false"
+                wrap="off"
+                aria-label="协同模式 Markdown 源文件编辑器"
+                @input="handleLocalSourceInput"
+                @scroll="handleCollabSourceScroll"
+              ></textarea>
+            </div>
+            <template v-else>
+              <div class="format-toolbar" role="toolbar" aria-label="笔记格式工具栏">
+                <select class="format-select" aria-label="段落样式" @change="runEditorCommand('formatBlock', ($event.target as HTMLSelectElement).value)">
+                  <option value="p">正文</option>
+                  <option value="h1">标题 1</option>
+                  <option value="h2">标题 2</option>
+                  <option value="h3">标题 3</option>
+                </select>
+                <select class="format-select" aria-label="字号" @change="runEditorCommand('fontSize', ($event.target as HTMLSelectElement).value)">
+                  <option value="3">标准</option>
+                  <option value="2">较小</option>
+                  <option value="4">大</option>
+                  <option value="5">特大</option>
+                </select>
+                <span class="format-separator"></span>
+                <button type="button" class="format-btn" title="加粗" @mousedown.prevent="runEditorCommand('bold')">B</button>
+                <button type="button" class="format-btn italic" title="斜体" @mousedown.prevent="runEditorCommand('italic')">I</button>
+                <button type="button" class="format-btn underline" title="下划线" @mousedown.prevent="runEditorCommand('underline')">U</button>
+                <button type="button" class="format-btn" title="无序列表" @mousedown.prevent="runEditorCommand('insertUnorderedList')">☷</button>
+                <button type="button" class="format-btn" title="引用" @mousedown.prevent="runEditorCommand('formatBlock', 'blockquote')">❝</button>
+                <button type="button" class="format-btn" title="提示卡片" @mousedown.prevent="insertEditorCallout">✦</button>
+                <button type="button" class="format-btn" title="分割线" @mousedown.prevent="insertEditorDivider">—</button>
+                <span class="format-separator"></span>
+                <button type="button" class="color-dot color-dot--forest" title="森林绿文字" @mousedown.prevent="runEditorCommand('foreColor', 'var(--forest)')"></button>
+                <button type="button" class="color-dot color-dot--sunset" title="日落橙文字" @mousedown.prevent="runEditorCommand('foreColor', 'var(--sunset)')"></button>
+                <button type="button" class="color-dot color-dot--blue" title="蓝色文字" @mousedown.prevent="runEditorCommand('foreColor', '#5378ff')"></button>
+                <span class="format-spacer"></span>
+                <button type="button" class="insert-image-tool" :disabled="uploadingImage" title="插入插图" @mousedown.prevent="localFileMode ? openLocalImagePicker() : openMdPicker()">{{ uploadingImage ? '上传中…' : '＋ 插图' }}</button>
+              </div>
+
+              <div ref="liveEditorRef" class="preview-content markdown-body live-editor" contenteditable="true" spellcheck="false" v-html="renderedPreview" @input="handleLiveEditorInput" @blur="syncLiveEditor" @click="handlePreviewClick" @paste="handleEditorPaste" @drop="handleImageDrop" @dragover="handleDragOver" @pointerdown="handleEditorPointerDown"></div>
+            </template>
+          </div>
+
+          <section v-if="showCollabEditor" class="collaboration-preview-pane" aria-label="实时预览">
+            <div class="collaboration-preview-header">
+              <span>实时预览</span>
+              <small>点击链接可在右侧查看</small>
+            </div>
+            <div ref="collabPreviewRef" class="preview-content markdown-body collaboration-preview-content" v-html="renderedCollabPreview" @click="handlePreviewClick" @scroll="handleCollabPreviewScroll"></div>
+          </section>
           
         </div>
       </div>
       
-      <p v-else class="empty-state">选择或创建一篇笔记开始编辑</p>
+      <div v-else class="empty-state">
+        <span>{{ activeWorkspaceId === DATABASE_WORKSPACE_ID ? '选择或创建一篇笔记开始编辑' : '这个工作区还没有文件' }}</span>
+        <div class="empty-state-actions">
+          <button type="button" class="empty-state-primary" :style="{ background: effectiveTheme.accent }" @click="activeWorkspaceId === DATABASE_WORKSPACE_ID ? addDoc('') : createWorkspaceFile()">
+            ＋ {{ activeWorkspaceId === DATABASE_WORKSPACE_ID ? '新建笔记' : '新建文件' }}
+          </button>
+          <button v-if="activeWorkspaceId !== DATABASE_WORKSPACE_ID" type="button" class="empty-state-secondary" @click="openLocalFile">↗ 打开本地文件</button>
+        </div>
+      </div>
     </main>
 
     <!-- ===== 右侧拖拽手柄 ===== -->
@@ -1326,7 +2302,7 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
         @pointerdown="onSectionResizeStart($event, 'outline', 'info')"
       ></div>
       <!-- 文档信息 -->
-      <div class="panel-section" data-section="info"  :class="{ collapsed: !infoVisible }" v-if="curDoc.id">
+      <div class="panel-section" data-section="info"  :class="{ collapsed: !infoVisible }" v-if="hasActiveDocument">
         <div class="section-header" @click="infoVisible = !infoVisible">
           <span>📄 文档信息</span>
           <span class="collapse-icon">{{ infoVisible ? '▼' : '▶' }}</span>
@@ -1342,9 +2318,10 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
           </div>
           <div class="info-row">
             <span>状态：</span>
-            <b>草稿</b>
+            <b>{{ localFileMode ? '本地编辑' : published ? '已发布' : '草稿' }}</b>
           </div>
-          <button class="danger-btn" @click="removeDoc">🗑 删除笔记</button>
+          <div v-if="localFileMode" class="info-row local-info-row"><span>文件：</span><b>{{ activeLocalFile?.sourcePath || '路径不可见' }}</b></div>
+          <button v-if="!localFileMode" class="danger-btn" @click="removeDoc">🗑 删除笔记</button>
         </div>
       </div>
 
@@ -1501,23 +2478,126 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   .panel-collapse-btn { width: 26px; height: 26px; flex-shrink: 0; }
 }
 
-/* 工作台标识条 */
+/* 工作台标识条与下拉列表 */
 .workspace-mini {
   padding: 10px 14px;
-  border-bottom: 1px solid #e5e6e8;
+  border-bottom: 1px solid var(--notes-line, #e5e6e8);
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.workspace-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-trigger-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.workspace-trigger-row .workspace-trigger {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-entry-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.workspace-entry-row > .workspace-entry {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.workspace-entry-create {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--notes-accent, #164e42);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .15s, visibility .15s, background .15s, transform .15s;
+}
+
+.workspace-entry-row:hover .workspace-entry-create,
+.workspace-entry-row:focus-within .workspace-entry-create {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.workspace-entry-create:hover,
+.workspace-entry-create:focus-visible {
+  background: color-mix(in srgb, var(--notes-accent, #164e42) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.workspace-trigger:hover .workspace-name-text,
+.workspace-trigger:focus-visible .workspace-name-text {
+  color: var(--notes-accent, #164e42);
 }
 
 .workspace-name {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
   color: inherit;
+}
+
+.workspace-name-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color .15s;
+}
+
+.workspace-chevron {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #8f959e;
+  font-size: 14px;
+  transition: background .15s, color .15s;
+}
+
+.workspace-trigger:hover .workspace-chevron,
+.workspace-trigger:focus-visible .workspace-chevron {
+  background: var(--notes-wash, #f0f1f2);
+  color: var(--notes-accent, #164e42);
 }
 
 .workspace-dot {
@@ -1531,6 +2611,148 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   font-weight: 800;
   font-size: 12px;
   flex-shrink: 0;
+}
+
+.workspace-dropdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(38vh, 320px);
+  margin-top: 8px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--notes-line, #e5e6e8);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--notes-bg, #fff) 84%, var(--notes-fg, #1f2329) 16%);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--notes-fg, #1f2329) 9%, transparent);
+  scrollbar-width: thin;
+}
+
+.workspace-entry,
+.workspace-file-entry,
+.workspace-create-btn {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-entry {
+  padding: 8px;
+  transition: background .15s, color .15s;
+}
+
+.workspace-entry:hover,
+.workspace-entry:focus-visible,
+.workspace-entry.active {
+  background: color-mix(in srgb, var(--notes-accent, #164e42) 12%, transparent);
+}
+
+.workspace-entry-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--notes-accent, #164e42) 15%, transparent);
+  color: var(--notes-accent, #164e42);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workspace-entry-icon.local {
+  background: color-mix(in srgb, var(--sunset, #f27a4f) 15%, transparent);
+  color: var(--sunset, #f27a4f);
+}
+
+.workspace-entry-copy,
+.workspace-file-entry > span:last-child {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-entry-copy b,
+.workspace-file-entry b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.workspace-entry-copy small,
+.workspace-file-entry small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8f959e;
+  font-size: 10px;
+}
+
+.workspace-entry-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--notes-fg, #1f2329) 8%, transparent);
+  color: #8f959e;
+  font-size: 10px;
+  text-align: center;
+}
+
+.workspace-file-list {
+  display: grid;
+  gap: 2px;
+  margin: -1px 0 2px 30px;
+  padding-left: 8px;
+  border-left: 1px solid var(--notes-line, #e5e6e8);
+}
+
+.workspace-file-entry {
+  padding: 6px 7px;
+  gap: 6px;
+  color: #646a73;
+}
+
+.workspace-file-entry:hover,
+.workspace-file-entry:focus-visible,
+.workspace-file-entry.active {
+  background: color-mix(in srgb, var(--notes-accent, #164e42) 10%, transparent);
+  color: var(--notes-accent, #164e42);
+}
+
+.workspace-file-icon {
+  flex-shrink: 0;
+  color: var(--notes-accent, #164e42);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.workspace-create-btn {
+  justify-content: center;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px dashed var(--notes-line, #d8dade);
+  color: var(--notes-accent, #164e42);
+  font-size: 12px;
+  transition: background .15s, border-color .15s;
+}
+
+.workspace-create-btn:hover,
+.workspace-create-btn:focus-visible {
+  background: color-mix(in srgb, var(--notes-accent, #164e42) 8%, transparent);
+  border-color: var(--notes-accent, #164e42);
 }
 
 /* 左栏收起后的展开按钮 */
@@ -1648,26 +2870,51 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-bottom: 1px solid #e5e6e8;
+  border-bottom: 1px solid var(--notes-line, #e5e6e8);
+}
+
+.file-action-row {
+  display: flex;
+  gap: 6px;
+
+  .toolbar-btn {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 6px;
+  }
+}
+
+.file-action-hint {
+  margin: -2px 2px 0;
+  color: #8f959e;
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .toolbar-btn {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #d8dade;
+  border: 1px solid var(--notes-line, #d8dade);
   border-radius: 6px;
-  background: #fff;
-  color: #646a73;
+  background: var(--notes-bg, #fff);
+  color: var(--notes-fg, #646a73);
   font-size: 13px;
   cursor: pointer;
   text-align: center;
   transition: all .15s;
 
   &:hover {
-    border-color: #9bb8ff;
-    color: #245bdb;
-    background: #f4f7ff;
+    border-color: var(--notes-accent, #9bb8ff);
+    color: var(--notes-accent, #245bdb);
+    background: var(--notes-wash, #f4f7ff);
   }
+}
+
+.local-file-btn {
+  border-color: color-mix(in srgb, var(--sunset, #f27a4f) 45%, var(--notes-line, #d8dade));
+  color: color-mix(in srgb, var(--sunset, #f27a4f) 72%, var(--notes-fg, #1f2329));
 }
 
 .new-note-btn {
@@ -1715,6 +2962,17 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   .note-time {
     font-size: 12px;
     color: #8f959e;
+  }
+}
+
+.local-note-item {
+  .note-title {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--notes-accent, #164e42) 8%, transparent);
   }
 }
 
@@ -1827,6 +3085,32 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.local-view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--notes-line, #e5e6e8);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--notes-bg, #fff) 75%, var(--notes-fg, #1f2329) 25%);
+}
+
+.local-view-switch button {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: transparent;
+  color: #8f959e;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.local-view-switch button.active {
+  background: var(--notes-bg, #fff);
+  color: var(--notes-accent, #164e42);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--notes-fg, #1f2329) 10%, transparent);
 }
 
 .title-stack {
@@ -1996,6 +3280,115 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   contain: layout paint;
 }
 
+.local-source-editor-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--notes-bg, #fff) 96%, var(--notes-fg, #1f2329) 4%);
+}
+
+.local-source-toolbar,
+.local-source-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 22px;
+  color: #8f959e;
+  font-size: 11px;
+  border-bottom: 1px solid var(--notes-line, #e5e6e8);
+}
+
+.local-source-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.local-insert-image-btn,
+.local-source-switch-btn {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--notes-line, #d8dade);
+  border-radius: 7px;
+  background: var(--notes-bg, #fff);
+  color: var(--notes-accent, #164e42);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.local-insert-image-btn:hover,
+.local-source-switch-btn:hover {
+  border-color: var(--notes-accent, #164e42);
+  background: var(--notes-wash, #f0f1f2);
+}
+
+.local-insert-image-btn:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.local-source-footer {
+  border-top: 1px solid var(--notes-line, #e5e6e8);
+  border-bottom: 0;
+}
+
+.local-source-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--notes-fg, #1f2329);
+  font: 600 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.local-source-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 24px 30px 120px;
+  background: transparent;
+  color: var(--notes-fg, #1f2329);
+  font: 13px/1.8 ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  caret-color: var(--notes-accent, #164e42);
+
+  &:focus {
+    box-shadow: inset 2px 0 0 var(--notes-accent, #164e42);
+  }
+}
+
+.local-source-badge {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--notes-accent, #164e42) 24%, transparent);
+  border-radius: 999px;
+  color: var(--notes-accent, #164e42);
+  font-size: 10px;
+}
+
+.local-info-row {
+  align-items: flex-start !important;
+
+  b {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+}
+
 
 .editor-area {
   flex: 1;
@@ -2010,6 +3403,106 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
   overflow: hidden;
 
   &.half { flex: 0.5; }
+}
+
+/* 协同模式：左侧继续编辑，右侧实时渲染；两栏各自滚动，不挤压页面高度。 */
+.editor-area.is-collaborative {
+  .editor-main {
+    flex: 1 1 50%;
+    min-width: 0;
+    border-right: 1px solid var(--notes-line, #e5e6e8);
+  }
+}
+
+.collaboration-source-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--notes-bg, #fff) 96%, var(--notes-fg, #1f2329) 4%);
+}
+
+.collaboration-source-header {
+  flex-shrink: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--notes-line, #e5e6e8);
+  color: var(--notes-fg, #1f2329);
+  font-size: 12px;
+  font-weight: 700;
+
+  small {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-3, #8c9993);
+    font-size: 10px;
+    font-weight: 500;
+  }
+}
+
+.collaboration-source-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 34px 30px 110px;
+  background: transparent;
+  color: var(--notes-fg, #1f2329);
+  font: 13px/1.8 ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  caret-color: var(--notes-accent, #164e42);
+
+  &:focus {
+    box-shadow: inset 2px 0 0 var(--notes-accent, #164e42);
+  }
+}
+
+.collaboration-preview-pane {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--notes-bg, #fff) 96%, var(--notes-fg, #1f2329) 4%);
+}
+
+.collaboration-preview-header {
+  flex-shrink: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--notes-line, #e5e6e8);
+  color: var(--notes-accent, #164e42);
+  font-size: 12px;
+  font-weight: 700;
+
+  small {
+    color: var(--ink-3, #8c9993);
+    font-size: 10px;
+    font-weight: 500;
+  }
+}
+
+.collaboration-preview-content {
+  width: 100%;
+  padding: 34px 34px 110px;
+  cursor: default;
+
+  .img-grip { display: none; }
+  img { cursor: default; }
 }
 
 .md-textarea {
@@ -2070,11 +3563,38 @@ function onSectionResizeStart(e: PointerEvent, beforeKey: string, afterKey: stri
 
 .empty-state {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
   color: #c5c7ca;
   font-size: 14px;
+}
+
+.empty-state-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.empty-state-primary,
+.empty-state-secondary {
+  border-radius: 8px;
+  padding: 8px 13px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.empty-state-primary {
+  border: 0;
+  color: #fff;
+  font-weight: 700;
+}
+
+.empty-state-secondary {
+  border: 1px solid var(--notes-line, #d8dade);
+  background: var(--notes-bg, #fff);
+  color: var(--notes-accent, #164e42);
 }
 
 /* ─── 右侧面板（卡片式布局，每个 section 独立成卡片） ────────────────── */
