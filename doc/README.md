@@ -1,5 +1,14 @@
 # Travel Agent - 智能旅行规划系统
 
+> 文档导航（2026-08-31）：请先阅读 [`API-CURRENT.md`](API-CURRENT.md)、[`ARCHITECTURE-CURRENT.md`](ARCHITECTURE-CURRENT.md) 和 [`REQUEST-FLOWS.md`](REQUEST-FLOWS.md)。本文件后面的 PR 演进记录是历史背景，当前端口、模块和接口以当前文档及源码为准。
+
+## 当前入口
+
+- 当前 API：[API-CURRENT.md](API-CURRENT.md)
+- 当前架构：[ARCHITECTURE-CURRENT.md](ARCHITECTURE-CURRENT.md)
+- 请求链路：[REQUEST-FLOWS.md](REQUEST-FLOWS.md)
+- 部署补充：[DEPLOYMENT.md](DEPLOYMENT.md)
+
 ## 项目概述
 
 Travel Agent 是一个基于 MCP (Model Context Protocol) 协议构建的智能旅行规划 AI Agent 系统。系统通过模块化架构提供天气查询、POI 搜索、餐饮推荐、预算估算、行程规划等功能。

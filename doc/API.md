@@ -1,5 +1,7 @@
 # API 接口文档
 
+> 历史接口说明：当前源码对齐的 API 入口是 [`API-CURRENT.md`](API-CURRENT.md)，根目录 [`API.md`](../API.md) 提供扩展示例。本文保留早期 PR 记录，不作为当前接口的唯一依据。
+
 ## 目录
 
 1. [Web API (8080)](#1-web-api-8080)

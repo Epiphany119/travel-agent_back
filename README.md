@@ -1,8 +1,29 @@
-# 🚀 智能旅行规划 Agent
+# 🚀 Roamly 智能旅行规划 Agent
+
+> 当前实现说明（2026-08-31）：本项目现在由同级的 Vue 3 前端和本 Spring Boot 后端组成。当前端口、模块关系、接口和请求链路请以以下文档为准；本文后面的旧版架构草稿保留作演进参考，不再作为启动说明。
+
+## 当前文档入口
+
+- [当前 API 合约](doc/API-CURRENT.md)：按 Controller 和前端 `src/api` 对齐的接口索引、请求体、SSE、权限和版权治理规则。
+- [当前架构说明](doc/ARCHITECTURE-CURRENT.md)：前后端边界、Maven 模块、数据所有权和可靠性约束。
+- [核心请求链路](doc/REQUEST-FLOWS.md)：规划、SSE、笔记编辑、社区复制和举报审核的时序图。
+- [扩展 API 示例](API.md)：较完整的请求示例；若与当前合约冲突，以 `doc/API-CURRENT.md` 和源码为准。
+- [前端说明](../travel-agent-front/README.md)：Vue 页面路由、Vite 代理和编辑器数据边界。
+
+## 当前启动方式
+
+后端 Web 聚合入口默认 `8080`，前端开发服务器默认 `5173`：
+
+```bash
+mvn spring-boot:run -pl travel-web -am
+cd ../travel-agent-front && npm install && npm run dev -- --host 127.0.0.1
+```
+
+前端会把 `/api`、`/a2a`、`/uploads` 转发到 `http://localhost:8080`。首次配置数据库时，先执行 `data/schema_clean.sql`（新库）或对应业务 migration（已有库），不要对已有数据重复执行带 `DROP TABLE` 的纯净 schema。
 
 基于 MCP (Model Context Protocol) + A2A (Agent-to-Agent) 架构的多 Agent 协作旅行规划系统。通过多个专业化 Agent 协作，智能完成旅行目的地规划、天气查询、地点推荐、餐饮搜索和预算估算。
 
-## ✨ 功能特性
+## 历史版本功能特性（保留供参考）
 
 - 🔄 **多 Agent 协作** - Planner、Coordinator、Executor 三个 Agent 分工协作
 - 📡 **实时流式响应** - SSE 流式输出，实时展示规划过程
@@ -13,7 +34,7 @@
 - 🗺️ **行程规划** - 自动生成每日行程安排
 - 🔌 **MCP 协议** - 标准化的工具调用协议，易于扩展
 
-## 🏗️ 技术架构
+## 历史架构草稿（请以 `doc/ARCHITECTURE-CURRENT.md` 为准）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐

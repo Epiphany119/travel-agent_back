@@ -2,6 +2,8 @@
 
 > 服务地址：`http://localhost:8080`（dev）
 > 统一响应格式、鉴权方式、接口说明详见下文。
+>
+> 当前合约入口：[`doc/API-CURRENT.md`](doc/API-CURRENT.md)。本文保留扩展示例；如端点、端口、权限或返回结构与当前源码不一致，以当前合约和 Controller 为准。
 
 ---
 
