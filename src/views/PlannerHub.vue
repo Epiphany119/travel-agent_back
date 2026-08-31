@@ -94,3 +94,51 @@ function selectMode(next: PlannerMode) {
   .planner-hub.is-embedded .planner-canvas { margin: 0; padding: 0 16px; border-left: 0; overflow: auto; }
 }
 </style>
+
+<style scoped>
+.planner-hub {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 80% 2%, color-mix(in srgb, var(--roam) 15%, transparent), transparent 22rem),
+    linear-gradient(135deg, color-mix(in srgb, var(--sunset) 4%, transparent), transparent 42%),
+    var(--paper);
+}
+
+.planner-hub::before {
+  content: 'PLAN / BUILD / ROAM';
+  position: absolute;
+  top: 22px;
+  right: 34px;
+  color: color-mix(in srgb, var(--forest) 28%, transparent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  pointer-events: none;
+}
+
+.planner-hub-head {
+  position: relative;
+  margin: 20px 34px 0;
+  padding: 24px 26px 20px;
+  border: 1px solid color-mix(in srgb, var(--forest) 12%, var(--line));
+  border-radius: 22px;
+  background: linear-gradient(115deg, color-mix(in srgb, var(--card) 90%, var(--sunset) 10%), color-mix(in srgb, var(--card) 92%, var(--roam) 8%));
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,.7);
+}
+
+.planner-hub-head h1 { letter-spacing: -.025em; }
+.planner-status { background: color-mix(in srgb, var(--card) 82%, var(--roam-soft)); }
+.planner-body { padding-top: 18px; }
+.planner-tabs { background: color-mix(in srgb, var(--card) 82%, transparent); box-shadow: inset 0 1px 0 rgba(255,255,255,.65); }
+.planner-tabs button { min-height: 64px; }
+.planner-tabs button.active { background: linear-gradient(145deg, var(--forest), var(--forest-deep)); box-shadow: 0 10px 20px color-mix(in srgb, var(--forest) 18%, transparent); }
+.planner-canvas { padding-top: 4px; }
+.planner-canvas::before { content: ''; display: block; height: 1px; margin: 0 0 12px; background: linear-gradient(90deg, color-mix(in srgb, var(--sunset) 50%, var(--line)), transparent 70%); }
+
+@media (max-width: 700px) {
+  .planner-hub::before { display: none; }
+  .planner-hub-head { margin: 12px 16px 0; padding: 20px 18px 17px; }
+  .planner-body { padding-top: 10px; }
+}
+</style>

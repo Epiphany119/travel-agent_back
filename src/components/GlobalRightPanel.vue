@@ -102,15 +102,17 @@ function copyUrl(url: string) {
   position: relative;
   flex-shrink: 0;
   height: 100%;
-  background: var(--card, #FFFDF8);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card, #FFFDF8) 90%, var(--sunset, #f27a4f) 10%), var(--card, #FFFDF8));
   display: flex;
   flex-direction: column;
   overflow: visible;
   box-sizing: border-box;
   /* 左右面板之间的分割竖线（App.vue 的 .app-resize-handle 也画了一条，
      这里只留一条淡色当底层分割）*/
-  border: 1px solid var(--line, #E7E0D2);
+  border: 1px solid color-mix(in srgb, var(--forest, #164e42) 12%, var(--line, #E7E0D2));
   border-radius: 14px;
+  box-shadow: -8px 0 24px color-mix(in srgb, var(--forest, #164e42) 7%, transparent), inset 1px 0 rgba(255,255,255,.55);
 }
 
 /* 内容起点从 header 下方对齐 */
@@ -127,8 +129,8 @@ function copyUrl(url: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2px 10px;
-  background: transparent;
+  padding: 10px 2px 10px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--forest, #164e42) 6%, transparent), transparent 80%);
   border-bottom: 1px solid color-mix(in srgb, var(--notes-fg, #1f2329) 12%, transparent);
   margin-bottom: 4px;
   z-index: 10;
@@ -136,7 +138,8 @@ function copyUrl(url: string) {
 
 .panel-title {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: .01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -153,8 +156,9 @@ function copyUrl(url: string) {
   width: 28px;
   height: 28px;
   border: 0;
-  background: var(--wash, #f0f1f2);
-  border-radius: 5px;
+  background: color-mix(in srgb, var(--wash, #f0f1f2) 80%, var(--sunset, #f27a4f) 20%);
+  border: 1px solid color-mix(in srgb, var(--sunset, #f27a4f) 20%, var(--line, #e7e0d2));
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
   display: flex;
@@ -181,7 +185,7 @@ function copyUrl(url: string) {
   min-height: 0;
   height: 100%;
   overflow: auto;
-  background: transparent;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--paper, #f7f3ea) 64%, transparent), transparent 12rem);
   position: relative;
 
 

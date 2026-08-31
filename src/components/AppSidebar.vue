@@ -156,8 +156,12 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   top: 0;
   display: flex;
   flex-direction: column;
-  background: var(--forest);
+  background:
+    radial-gradient(circle at 50% -6%, color-mix(in srgb, var(--sunset) 28%, transparent), transparent 9rem),
+    linear-gradient(180deg, var(--forest) 0%, var(--forest-deep) 100%);
   padding: 14px 8px;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 8px 0 24px color-mix(in srgb, var(--forest) 16%, transparent), inset -1px 0 rgba(255,255,255,.05);
   overflow: visible;
 }
 
@@ -167,6 +171,8 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   justify-content: center;
   gap: 0;
   padding: 2px 0 22px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+  margin-bottom: 12px;
   cursor: pointer;
 }
 
@@ -206,7 +212,8 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  border: 1px solid transparent;
+  transition: background 0.2s, color 0.2s, border-color .2s, transform .2s;
 
   &::before {
     content: '';
@@ -223,11 +230,15 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   &:hover {
     background: rgba(255, 255, 255, 0.07);
     color: #FFFDF8;
+    border-color: rgba(255,255,255,.08);
+    transform: translateX(1px);
   }
 
   &.active {
-    background: rgba(255, 255, 255, 0.14);
+    background: linear-gradient(135deg, rgba(255,255,255,.18), rgba(255,255,255,.09));
     color: #ffffff;
+    border-color: rgba(255,255,255,.12);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 6px 14px rgba(0,0,0,.10);
 
     &::before { opacity: 1; }
   }
@@ -292,11 +303,12 @@ const avatarFallback = computed(() => (userStore.nickname || '旅人').charAt(0)
   gap: 0;
   padding: 8px 0;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+  border: 1px solid rgba(255,255,255,.10);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, transform .2s, border-color .2s;
 
-  &:hover { background: rgba(255, 255, 255, 0.12); }
+  &:hover { background: rgba(255, 255, 255, 0.16); border-color: rgba(255,255,255,.18); transform: translateY(-1px); }
 }
 
 .user-avatar {

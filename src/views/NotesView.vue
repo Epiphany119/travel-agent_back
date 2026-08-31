@@ -112,10 +112,17 @@ function renderMarkdown(source: string): string {
       /<pre><code[^>]*class="language-([\w+-]+)"[^>]*>/g,
       (m: string, lang: string) => `<pre data-lang="${lang}"><code class="language-${lang}">`
     )
-    // 图片：解析 title="w=NNN" 持久化尺寸 → width 属性，并包上缩放手柄（编辑模式下可拖动缩放）
+    // 图片：解析 title 中的 w=NNN 持久化尺寸 → width 属性，并包上缩放手柄。
+    // 兼容同时带有普通 title 的图片，例如 title="封面 w=640"。
     html = html.replace(
-      /<img([^>]*?)\stitle="w=(\d+)"([^>]*)>/g,
-      (m: string, pre: string, w: string, post: string) => `<img${pre} width="${w}"${post}>`
+      /<img([^>]*?)\stitle="([^"]*)"([^>]*)>/g,
+      (m: string, pre: string, title: string, post: string) => {
+        const size = title.match(/(?:^|\s)w=(\d+)(?=\s|$)/)
+        if (!size) return m
+        const cleanTitle = title.replace(/(?:^|\s)w=\d+(?=\s|$)/, '').trim()
+        const titleAttr = cleanTitle ? ` title="${cleanTitle}"` : ''
+        return `<img${pre} width="${size[1]}"${titleAttr}${post}>`
+      }
     )
     html = html.replace(
       /<p><img([^>]*)><\/p>/g,
@@ -129,8 +136,6 @@ function renderMarkdown(source: string): string {
         return `<span class="img-line"><img${attrs} draggable="true"><i class="img-grip" title="拖动缩放"></i></span>`
       }
     )
-    // 兜底：清掉残留的尺寸 title，避免鼠标悬停在图片上时出现 "w=NNN" 提示
-    html = html.replace(/\stitle="w=\d+"/g, '')
     return DOMPurify.sanitize(html, {
       ADD_TAGS: ['img', 'hr', 'input', 'figure', 'figcaption'],
       ADD_ATTR: ['contenteditable', 'draggable', 'data-note-id', 'data-link', 'width', 'title', 'style', 'loading', 'target', 'rel']
@@ -641,13 +646,27 @@ async function openDoc(id: number) {
 }
 
 // ─── 保存笔记 ────────────────────────────────────────────
-async function saveDoc(silent = false): Promise<NoteDocument | undefined> {
+async function saveDoc(silent = false, contentOverride?: string): Promise<NoteDocument | undefined> {
+  const hasContentOverride = contentOverride !== undefined
+  if (hasContentOverride) {
+    // 图片缩放等 DOM 操作可能紧接着触发 Vue 的重新渲染。保存时接收一个
+    // 明确的内容快照，避免下一次 DOM → Markdown 同步把刚改过的尺寸覆盖掉。
+    editorContent.value = contentOverride
+    curDoc.content = contentOverride
+    if (localFileMode.value) {
+      localSourceContent.value = contentOverride
+      collabPreviewContent.value = contentOverride
+    }
+  }
   if (localFileMode.value) {
-    await saveLocalFile(silent)
+    await saveLocalFile(silent, contentOverride)
     return undefined
   }
-  syncLiveEditor()
-  if (currentId.value == null) { await addDoc(); return undefined }
+  if (!hasContentOverride) syncLiveEditor()
+  if (currentId.value == null) {
+    await addDoc(hasContentOverride ? contentOverride : editorContent.value)
+    return undefined
+  }
   saving.value = true
   try {
     const payload = {
@@ -1084,17 +1103,107 @@ function insertLocalSourceImageAtCursor(url: string, mode: 'cursor' | 'end') {
   })
 }
 
-/** 在 Markdown 中按图片地址回写尺寸 title="w=NNN" */
-function setImageWidthInMarkdown(src: string, w: number): string {
-  const imgRe = /!\[[^\]]*\]\(([^)\s)]+|\([^)]*\))([^)]*)\)/g
-  return editorContent.value.replace(imgRe, (whole: string, url: string, rest: string) => {
-    if (!url.includes(src)) return whole
-    const titles: string[] = []
-    const old = rest.match(/"([^"]*)"/)
-    if (old && !/^w=\d+$/.test(old[1])) titles.push(old[1])
-    titles.push('w=' + w)
-    return whole.replace(rest, ' "' + titles.join(' ') + '"')
-  })
+type MarkdownImageSpan = { start: number; end: number; target: string }
+
+/**
+ * 找出 Markdown 内联图片的完整范围。
+ *
+ * 之前用一个简单正则截取图片地址，遇到没有 title 的图片时会把
+ * `"w=640"` 插到整段 Markdown 的开头；URL 中带括号时也可能匹配失败，
+ * 最终表现为拖动时看起来成功、重新加载后尺寸恢复。这里用小型括号扫描
+ * 处理 URL 和 title，仍保持原有的 title="w=NNN" 兼容格式。
+ */
+function findMarkdownImageSpans(source: string): MarkdownImageSpan[] {
+  const spans: MarkdownImageSpan[] = []
+  let cursor = 0
+  while (cursor < source.length) {
+    const start = source.indexOf('![', cursor)
+    if (start < 0) break
+    const targetStart = source.indexOf('](', start + 2)
+    if (targetStart < 0) {
+      cursor = start + 2
+      continue
+    }
+
+    let depth = 1
+    let quote = ''
+    let escaped = false
+    let end = targetStart + 2
+    for (; end < source.length; end += 1) {
+      const char = source[end]
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === '\\') {
+        escaped = true
+        continue
+      }
+      if (quote) {
+        if (char === quote) quote = ''
+        continue
+      }
+      if (char === '"' || char === "'") {
+        quote = char
+        continue
+      }
+      if (char === '(') depth += 1
+      if (char === ')' && --depth === 0) break
+    }
+    if (depth !== 0) {
+      cursor = start + 2
+      continue
+    }
+    spans.push({ start, end: end + 1, target: source.slice(targetStart + 2, end) })
+    cursor = end + 1
+  }
+  return spans
+}
+
+function parseMarkdownImageTarget(target: string): { url: string; title: string; bracketed: boolean } | null {
+  const value = target.trim()
+  if (!value) return null
+  if (value.startsWith('<')) {
+    const close = value.indexOf('>')
+    if (close < 0) return null
+    const suffix = value.slice(close + 1).trim()
+    return {
+      url: value.slice(1, close),
+      title: suffix.length >= 2 && ((suffix.startsWith('"') && suffix.endsWith('"')) || (suffix.startsWith("'") && suffix.endsWith("'")))
+        ? suffix.slice(1, -1)
+        : '',
+      bracketed: true
+    }
+  }
+  const match = value.match(/^(\S+)(?:\s+([\s\S]*))?$/)
+  if (!match) return null
+  const suffix = (match[2] || '').trim()
+  return {
+    url: match[1],
+    title: suffix.length >= 2 && ((suffix.startsWith('"') && suffix.endsWith('"')) || (suffix.startsWith("'") && suffix.endsWith("'")))
+      ? suffix.slice(1, -1)
+      : '',
+    bracketed: false
+  }
+}
+
+/** 在 Markdown 中按图片地址/顺序回写尺寸 title="w=NNN"。 */
+function setImageWidthInMarkdown(source: string, src: string, w: number, imageIndex = -1): string {
+  const spans = findMarkdownImageSpans(source)
+  if (!spans.length) return source
+  const matches = spans.map((span, index) => ({ span, index, parsed: parseMarkdownImageTarget(span.target) }))
+    .filter(item => item.parsed && (item.parsed.url === src || item.parsed.url.includes(src) || src.includes(item.parsed.url)))
+  if (!matches.length) return source
+
+  const selected = (imageIndex >= 0 ? matches.find(item => item.index === imageIndex) : null) || matches[0]
+  if (!selected.parsed) return source
+  const width = Math.round(Math.min(1000, Math.max(48, Number(w) || 48)))
+  const oldTitle = selected.parsed.title.trim()
+  const titles = oldTitle && !/^w=\d+$/.test(oldTitle) ? [oldTitle] : []
+  titles.push('w=' + width)
+  const url = selected.parsed.bracketed ? '<' + selected.parsed.url + '>' : selected.parsed.url
+  const nextTarget = url + ' "' + titles.join(' ') + '"'
+  return source.slice(0, selected.span.start) + source.slice(selected.span.start, selected.span.end).replace(selected.span.target, nextTarget) + source.slice(selected.span.end)
 }
 
 /** 上传图片并插入（统一入口：粘贴 / 拖拽 / 选择） */
@@ -1167,16 +1276,21 @@ function handleEditorPointerDown(e: PointerEvent) {
     const img = grip.closest('.img-line')?.querySelector('img') as HTMLImageElement | null
     const src = img?.getAttribute('src') || ''
     if (!img) return
-    // 1) 当前 DOM → Markdown（含缩放后的 w=NNN）
-    syncLiveEditor()
-    // 2) 保底：若转换未命中该图片尺寸，直接按地址回写（幂等）
-    if (src) {
-      const w = Math.min(1000, Math.max(48, img.clientWidth))
-      editorContent.value = setImageWidthInMarkdown(src, w)
-    }
+    // 1) 当前 DOM → Markdown，并按 DOM 顺序定位本次拖动的图片。
+    const source = liveEditorRef.value ? htmlToMarkdown(liveEditorRef.value) : editorContent.value
+    const imageIndex = liveEditorRef.value
+      ? Array.from(liveEditorRef.value.querySelectorAll('img')).indexOf(img)
+      : -1
+    // 2) 显式回写尺寸。即使 DOM 转换未携带 width，也不会丢掉本次调整。
+    const w = Math.min(1000, Math.max(48, img.clientWidth))
+    const resizedMarkdown = src
+      ? setImageWidthInMarkdown(source, src, w, imageIndex)
+      : source
+    editorContent.value = resizedMarkdown
     if (localFileMode.value) syncLocalRenderedContent()
-    // 3) 静默保存：缩放即入库，避免用户忘记保存导致尺寸/位置丢失
-    void saveDoc(true)
+    dirty.value = true
+    // 3) 使用同一份内容快照保存，避免保存函数再次读取旧 DOM 覆盖尺寸。
+    void saveDoc(true, resizedMarkdown)
   }
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
@@ -1467,9 +1581,15 @@ function downloadLocalFileFallback() {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-async function saveLocalFile(silent = false) {
+async function saveLocalFile(silent = false, contentOverride?: string) {
   if (!localFileMode.value || !activeLocalFile.value) return
-  if (localMarkdownMode.value && localEditorMode.value === 'rendered') {
+  if (contentOverride !== undefined) {
+    // 图片缩放保存时直接使用已生成的 Markdown 快照，避免再次从旧 DOM 读取。
+    editorContent.value = contentOverride
+    localSourceContent.value = contentOverride
+    collabPreviewContent.value = contentOverride
+    curDoc.content = contentOverride
+  } else if (localMarkdownMode.value && localEditorMode.value === 'rendered') {
     syncLiveEditor()
   } else if (showCollabEditor.value) {
     editorContent.value = localSourceContent.value

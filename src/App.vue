@@ -390,3 +390,70 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #C4BCA8; }
 ::-webkit-scrollbar-track { background: transparent; }
 </style>
+
+<style>
+/* ─── 当前产品壳层：纸张底、森林绿导航、暖橙行动色 ────────────────
+   这些是派生令牌，不覆盖用户在个人资料里保存的三色主题；主题切换时
+   --paper / --forest / --sunset 会自动带着整套界面一起变化。 */
+:root {
+  --paper-deep: color-mix(in srgb, var(--paper) 88%, var(--ink) 12%);
+  --surface-tint: color-mix(in srgb, var(--paper) 84%, var(--forest) 16%);
+  --forest-wash: color-mix(in srgb, var(--forest) 9%, var(--paper));
+  --sunset-wash: color-mix(in srgb, var(--sunset) 9%, var(--paper));
+  --surface-raised: color-mix(in srgb, var(--paper) 78%, #fff);
+}
+
+body {
+  background:
+    radial-gradient(circle at 12% 14%, var(--sunset-wash), transparent 24rem),
+    radial-gradient(circle at 88% 4%, var(--forest-wash), transparent 30rem),
+    var(--paper);
+}
+
+.app-layout {
+  background:
+    radial-gradient(circle at 94% 10%, color-mix(in srgb, var(--forest) 9%, transparent), transparent 32rem),
+    radial-gradient(circle at 12% 92%, color-mix(in srgb, var(--sunset) 6%, transparent), transparent 30rem),
+    var(--paper);
+}
+
+.app-header-row > .app-header {
+  background: linear-gradient(112deg, var(--forest-deep) 0%, var(--forest) 58%, color-mix(in srgb, var(--forest) 76%, var(--sunset)) 150%);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--forest) 20%, transparent), inset 0 1px 0 rgba(255,255,255,.10);
+}
+
+.app-main {
+  background: color-mix(in srgb, var(--paper) 76%, #fff);
+  border-color: color-mix(in srgb, var(--forest) 12%, var(--line));
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--forest) 8%, transparent);
+}
+
+.app-body {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--forest) 5%, transparent), transparent 42%),
+    linear-gradient(315deg, color-mix(in srgb, var(--sunset) 4%, transparent), transparent 40%),
+    var(--wash);
+}
+
+.workspace {
+  background: color-mix(in srgb, var(--paper) 82%, #fff);
+  border: 1px solid color-mix(in srgb, var(--forest) 9%, var(--line));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+}
+
+.workspace-route-view {
+  background: transparent;
+}
+
+.app-resize-handle::before {
+  background: color-mix(in srgb, var(--forest) 16%, var(--line));
+}
+
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--forest) 23%, var(--line)); }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--forest) 40%, var(--line)); }
+
+@media (max-width: 860px) {
+  .app-main { border-radius: 12px; }
+  .app-body { padding: 6px; gap: 6px; }
+}
+</style>

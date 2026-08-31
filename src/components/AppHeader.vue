@@ -184,18 +184,19 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .app-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
   height: 48px;
   padding: 4px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  background: transparent;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(90deg, rgba(255,255,255,.05), transparent 38%, rgba(242,122,79,.08));
   flex-shrink: 0;
 }
 
-/* 搜索框：透明、无胶囊背景，仅底部一条细线 */
+/* 搜索框：保留顶栏的轻量感，但给输入区明确的层级 */
 .search {
   position: relative;
   flex: 1 1 260px;
@@ -204,15 +205,18 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 9px;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.35);
-  padding: 6px 2px;
-  transition: border-color .15s;
+  background: rgba(5, 35, 29, .34);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 7px 11px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  transition: border-color .15s, background .15s, box-shadow .15s;
 
   &:hover,
   &:focus-within {
-    border-bottom-color: rgba(255,255,255,0.8);
+    border-color: rgba(255,255,255,0.42);
+    background: rgba(5, 35, 29, .48);
+    box-shadow: 0 0 0 3px rgba(255,255,255,.06), inset 0 1px 0 rgba(255,255,255,.06);
   }
 
   svg {
@@ -316,10 +320,10 @@ onBeforeUnmount(() => {
   min-width: 180px;
   height: 30px;
   padding: 0 6px;
-  background: rgba(8, 44, 37, 0.38);
-  border: 1px solid rgba(255,255,255,0.11);
-  border-radius: 8px;
-  box-shadow: none;
+  background: rgba(8, 44, 37, 0.28);
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
   overflow: hidden;
 }
 
@@ -358,10 +362,11 @@ onBeforeUnmount(() => {
   &:hover { color: #fff; background: rgba(255,255,255,.07); }
 
   &.active {
-    background: transparent;  /* 不做白色胶囊，保持跟外层白膜一体 */
+    background: rgba(255,255,255,.12);
     color: #fff;
     font-weight: 700;
     border-bottom-color: var(--sunset, #f27a4f);  /* 当前页指示线 */
+    border-radius: 8px 8px 5px 5px;
   }
 }
 
@@ -411,7 +416,7 @@ onBeforeUnmount(() => {
   font-weight: 800;
   font-size: 13px;
   padding: 7px 16px;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   transition: transform 0.15s, box-shadow 0.15s;
@@ -428,9 +433,9 @@ onBeforeUnmount(() => {
   position: relative;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  border: 0;
-  background: rgba(255,255,255,0.15);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,0.12);
   color: #fff;
   display: grid;
   place-items: center;

@@ -116,3 +116,130 @@ onMounted(async()=>{
 .author-link .avatar { overflow: hidden; }
 .author-link .avatar img { width: 100%; height: 100%; object-fit: cover; }
 </style>
+
+<style scoped>
+/* 发现页的层次：把“空白”变成可呼吸的纸张、导览和内容卡片。 */
+.explore-page {
+  position: relative;
+  isolation: isolate;
+  width: min(1220px, calc(100% - 56px));
+  padding: 42px 0 88px;
+}
+
+.explore-page::before,
+.explore-page::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(2px);
+}
+
+.explore-page::before {
+  width: 360px;
+  height: 360px;
+  top: 12px;
+  right: -90px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--roam) 12%, transparent), transparent 70%);
+}
+
+.explore-page::after {
+  width: 300px;
+  height: 300px;
+  left: -150px;
+  top: 430px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--sunset) 8%, transparent), transparent 70%);
+}
+
+.explore-head {
+  position: relative;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 26px 28px 24px;
+  border: 1px solid color-mix(in srgb, var(--forest) 13%, var(--line));
+  border-radius: 24px;
+  background: linear-gradient(116deg, color-mix(in srgb, var(--card) 88%, var(--sunset) 12%), var(--card) 62%, color-mix(in srgb, var(--card) 88%, var(--roam) 12%));
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,.72);
+  overflow: hidden;
+}
+
+.explore-head::after {
+  content: 'ROAM / 01';
+  position: absolute;
+  right: 28px;
+  top: 20px;
+  color: color-mix(in srgb, var(--forest) 32%, transparent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .18em;
+}
+
+.explore-head .sub { max-width: 520px; line-height: 1.7; }
+.head-actions { position: relative; z-index: 1; }
+.profile-pill { background: color-mix(in srgb, var(--card) 82%, var(--roam-soft)); }
+
+.search-bar {
+  margin: 0 8px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 88%, var(--roam-soft));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--forest) 7%, transparent), inset 0 1px 0 rgba(255,255,255,.7);
+}
+
+.feed-tabs {
+  margin: 20px 8px 26px;
+  padding: 0 4px;
+}
+
+.feed-tabs button { position: relative; padding: 0 3px 13px; }
+.feed-tabs button.active::after { content: ''; position: absolute; left: 3px; right: 3px; bottom: -1px; height: 3px; border-radius: 99px; background: var(--sunset); }
+
+.ai-callout,
+.creator-strip {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--forest) 7%, transparent), inset 0 1px 0 rgba(255,255,255,.76);
+}
+
+.ai-callout::after,
+.creator-strip::after {
+  content: '';
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  right: 110px;
+  top: -115px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--sunset) 24%, transparent);
+  box-shadow: 0 0 0 18px color-mix(in srgb, var(--sunset) 5%, transparent), 0 0 0 36px color-mix(in srgb, var(--sunset) 3%, transparent);
+  pointer-events: none;
+}
+
+.ai-callout > *, .creator-strip > * { position: relative; z-index: 1; }
+.ai-callout h2, .creator-strip h2 { letter-spacing: -.02em; }
+.ai-callout button, .creator-strip button { transition: transform .18s, box-shadow .18s, background .18s; }
+.ai-callout button:hover, .creator-strip button:hover { transform: translateY(-2px); box-shadow: 0 8px 16px color-mix(in srgb, var(--forest) 18%, transparent); background: var(--forest-deep); }
+
+.section-head { margin: 0 8px 16px; padding-top: 4px; }
+.section-head h2 { letter-spacing: -.025em; }
+.text-btn { background: color-mix(in srgb, var(--card) 74%, transparent); }
+
+.feed-grid { column-gap: 20px; }
+.note-card { border-radius: 20px; border-color: color-mix(in srgb, var(--forest) 12%, var(--line)); box-shadow: 0 3px 0 color-mix(in srgb, var(--forest) 4%, transparent), 0 12px 26px color-mix(in srgb, var(--forest) 5%, transparent); }
+.note-card:hover { box-shadow: 0 16px 32px color-mix(in srgb, var(--forest) 14%, transparent); }
+.note-cover { aspect-ratio: 1.15; }
+.note-cover img { transition: transform .35s cubic-bezier(.22,1,.36,1); }
+.note-card:hover .note-cover img { transform: scale(1.035); }
+.note-body { padding: 15px 16px 16px; }
+.note-body h3 { letter-spacing: -.015em; }
+.tag-row span { border: 1px solid color-mix(in srgb, var(--forest) 8%, transparent); }
+.creator-strip { margin-top: 48px; }
+
+@media (max-width: 700px) {
+  .explore-page { width: calc(100% - 28px); padding-top: 24px; }
+  .explore-head { padding: 22px 18px 20px; }
+  .explore-head::after { display: none; }
+  .search-bar, .feed-tabs, .section-head { margin-left: 0; margin-right: 0; }
+}
+</style>

@@ -344,3 +344,36 @@ onMounted(load)
 :deep(.inspiration-editor .el-dialog__body) { max-height: 78vh; overflow-y: auto; }
 :deep(.inspiration-editor .el-dialog__header) { border-bottom: 1px solid var(--line); }
 </style>
+
+<style scoped>
+.page {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 92% 4%, color-mix(in srgb, var(--roam) 12%, transparent), transparent 24rem),
+    radial-gradient(circle at 8% 34%, color-mix(in srgb, var(--sunset) 7%, transparent), transparent 22rem),
+    var(--paper);
+}
+
+.head {
+  position: relative;
+  padding: 26px 28px 22px;
+  border: 1px solid color-mix(in srgb, var(--forest) 12%, var(--line));
+  border-radius: 22px;
+  background: linear-gradient(118deg, color-mix(in srgb, var(--card) 90%, var(--sunset) 10%), color-mix(in srgb, var(--card) 92%, var(--roam) 8%));
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,.75);
+}
+
+.head h1 { letter-spacing: -.025em; }
+.head-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.grid { gap: 20px; }
+.card { border-color: color-mix(in srgb, var(--forest) 12%, var(--line)); box-shadow: 0 3px 0 color-mix(in srgb, var(--forest) 4%, transparent), 0 14px 28px color-mix(in srgb, var(--forest) 6%, transparent); }
+.card:hover { box-shadow: 0 18px 36px color-mix(in srgb, var(--forest) 14%, transparent); }
+.thumb { height: 176px; }
+.body { padding: 18px 19px 20px; }
+.chip { border: 1px solid color-mix(in srgb, var(--forest) 8%, transparent); }
+
+@media (max-width: 700px) {
+  .head { padding: 22px 18px 18px; }
+}
+</style>

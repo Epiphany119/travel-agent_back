@@ -1177,3 +1177,41 @@ onMounted(() => { loadSystemPalette(); load(); loadOwnPosts() })
   .grid2, .grid3 { grid-template-columns: 1fr; }
 }
 </style>
+
+<style scoped>
+.shell {
+  position: relative;
+  isolation: isolate;
+  padding: 26px 28px 34px;
+  background:
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--roam) 11%, transparent), transparent 25rem),
+    radial-gradient(circle at 7% 80%, color-mix(in srgb, var(--sunset) 7%, transparent), transparent 22rem),
+    var(--paper);
+}
+
+.profile-head {
+  width: min(1160px, calc(100% - 40px));
+  margin: 0 auto 18px;
+  padding: 22px 26px 18px;
+  border: 1px solid color-mix(in srgb, var(--forest) 12%, var(--line));
+  border-radius: 22px;
+  background: linear-gradient(118deg, color-mix(in srgb, var(--card) 89%, var(--sunset) 11%), color-mix(in srgb, var(--card) 93%, var(--roam) 7%));
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,.72);
+}
+
+.profile-head h1 { letter-spacing: -.025em; }
+.layout { gap: 20px; }
+.profile-card, .panel.posts-panel, .panel.prefs { border-color: color-mix(in srgb, var(--forest) 12%, var(--line)); box-shadow: 0 8px 24px color-mix(in srgb, var(--forest) 7%, transparent); }
+.card-hero { background: radial-gradient(140% 120% at 50% 0%, color-mix(in srgb, var(--roam-soft) 86%, var(--sunset-soft)), var(--card) 60%); }
+.avatar-ring { box-shadow: 0 10px 28px color-mix(in srgb, var(--forest) 22%, transparent), 0 0 0 10px color-mix(in srgb, var(--roam) 12%, transparent); }
+.right-panel-toolbar { background: linear-gradient(100deg, color-mix(in srgb, var(--card) 88%, var(--roam-soft)), color-mix(in srgb, var(--card) 90%, var(--sunset-soft))); }
+.posts-panel-head button, .save-btn { box-shadow: 0 8px 16px color-mix(in srgb, var(--forest) 14%, transparent); }
+.profile-post { border-color: color-mix(in srgb, var(--forest) 12%, var(--line)); box-shadow: 0 2px 0 color-mix(in srgb, var(--forest) 3%, transparent); }
+.profile-post:hover { box-shadow: 0 16px 30px color-mix(in srgb, var(--forest) 13%, transparent); }
+.profile-post-tags span { border: 1px solid color-mix(in srgb, var(--forest) 8%, transparent); }
+
+@media (max-width: 700px) {
+  .shell { padding: 18px 14px 28px; }
+  .profile-head { width: 100%; padding: 20px 18px 17px; }
+}
+</style>

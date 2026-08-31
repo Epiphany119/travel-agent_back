@@ -487,3 +487,36 @@ onMounted(async () => {
 .url-preview img { width: 80px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .url-preview-hint { font-size: 11px; color: #8a9792; }
 </style>
+
+<style scoped>
+.page {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 88% 3%, color-mix(in srgb, var(--roam) 12%, transparent), transparent 24rem),
+    radial-gradient(circle at 12% 38%, color-mix(in srgb, var(--sunset) 7%, transparent), transparent 22rem),
+    var(--paper);
+}
+
+.head {
+  position: relative;
+  padding: 26px 28px 22px;
+  border: 1px solid color-mix(in srgb, var(--forest) 12%, var(--line));
+  border-radius: 22px;
+  background: linear-gradient(118deg, color-mix(in srgb, var(--card) 90%, var(--sunset) 10%), color-mix(in srgb, var(--card) 92%, var(--roam) 8%));
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,.75);
+}
+
+.head h1 { letter-spacing: -.025em; }
+.list { gap: 20px; }
+.card { border-color: color-mix(in srgb, var(--forest) 12%, var(--line)); box-shadow: 0 3px 0 color-mix(in srgb, var(--forest) 4%, transparent), 0 14px 28px color-mix(in srgb, var(--forest) 6%, transparent); transition: transform .22s, box-shadow .22s; }
+.card:hover { transform: translateY(-3px); box-shadow: 0 18px 36px color-mix(in srgb, var(--forest) 14%, transparent); }
+.cover { height: 176px; }
+.info { padding: 19px; }
+.chips span { border: 1px solid color-mix(in srgb, var(--forest) 8%, transparent); }
+.journey-studio-card { box-shadow: 0 16px 36px color-mix(in srgb, var(--forest) 10%, transparent); }
+
+@media (max-width: 700px) {
+  .head { padding: 22px 18px 18px; }
+}
+</style>
