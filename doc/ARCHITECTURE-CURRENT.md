@@ -1,14 +1,14 @@
 # Roamly 当前架构说明
 
-> 版本：2026-08-31  
+> 版本：2026-09-04
 > 以根 `pom.xml`、`travel-web` 启动模块和前端 Vite 配置为准。旧的 PR 设计稿仍保留在 `doc/ARCHITECTURE.md`，但不作为当前端口和模块关系的依据。
 
 ## 1. 系统边界
 
-Roamly 由两个同级工程组成：
+Roamly 采用单仓结构：
 
-- `travel-agent-front`：Vue 3 + Vite 的用户界面，负责路由、编辑器、卡片展示、SSE 消费和本地源文件快照。
-- `travel-agent-back`：Java 17 + Spring Boot 3.2.4 的模块化服务，负责认证、用户资料、社区、笔记、旅行规划、Agent 编排、MCP 工具和持久化。
+- `frontend/`：Vue 3 + Vite 用户界面，负责路由、编辑器、卡片展示、SSE 消费和本地源文件快照。
+- 仓库根目录的 Maven 模块：Java 17 + Spring Boot 3.2.4 模块化后端，负责认证、用户资料、社区、笔记、旅行规划、Agent 编排、MCP 工具和持久化。
 
 ```mermaid
 flowchart LR
@@ -138,12 +138,13 @@ App.vue
 后端：
 
 ```bash
-./mvnw spring-boot:run -pl travel-web -am
+mvn spring-boot:run -pl travel-web -am
 ```
 
 前端：
 
 ```bash
+cd frontend
 npm install
 npm run dev -- --host 127.0.0.1
 ```

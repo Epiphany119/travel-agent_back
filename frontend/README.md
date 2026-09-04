@@ -1,4 +1,4 @@
-# Travel Agent Frontend
+# Roamly Frontend
 
 Roamly 的 Vue 3 + Vite 前端，面向旅行规划、社区帖子、个人主页、笔记编辑器和本地源文件工作区。
 
@@ -9,7 +9,7 @@ npm install
 npm run dev -- --host 127.0.0.1
 ```
 
-开发地址：`http://localhost:5173`。Vite 将 `/api`、`/a2a` 和 `/uploads` 代理到 `http://localhost:8080`；后端配置和接口以同级工程 [`travel-agent-back/API.md`](../travel-agent-back/API.md) 与 [`doc/API-CURRENT.md`](../travel-agent-back/doc/API-CURRENT.md) 为准。
+开发地址：`http://localhost:5173`。Vite 将 `/api`、`/a2a` 和 `/uploads` 代理到 `http://localhost:8080`；后端配置和接口以仓库根目录的 [`API.md`](../API.md) 与 [`doc/API-CURRENT.md`](../doc/API-CURRENT.md) 为准。
 
 ## 页面入口
 

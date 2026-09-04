@@ -214,11 +214,11 @@ services:
         condition: service_healthy
 
   #==========================================
-  # Frontend (React + Nginx) - Port 3000
+  # Frontend (Vue 3 + Nginx) - Port 3000
   #==========================================
   frontend:
     build:
-      context: ../travel-agent-front
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: travel-frontend
     restart: unless-stopped
@@ -236,7 +236,7 @@ services:
     networks:
       - travel-network
     depends_on:
-      a2a-runtime:
+      travel-web:
         condition: service_healthy
 
 #==========================================

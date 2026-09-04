@@ -1,4 +1,4 @@
-# travel-agent-back 重构计划
+# travel-agent 重构计划
 
 > 起点：2026-08-12
 > 范围：5 个 PR，按顺序执行，每 PR 后 `mvn clean install -DskipTests` 必须通过

@@ -20,6 +20,7 @@
 |------|----------|----------|
 | JDK | 17 | 17 LTS |
 | Maven | 3.8 | 3.9+ |
+| Node.js | 18 | 20 LTS |
 | MySQL | 8.0 | 8.0.33+ |
 | Docker | 20.10 | 24.0+ |
 | Kubernetes | 1.25 | 1.28+ |
@@ -47,7 +48,7 @@
 ```bash
 # 1. 克隆项目
 git clone <repository-url>
-cd travel-agent-back
+cd travel-agent
 
 # 2. 创建本地配置
 cat > travel-web/src/main/resources/application-local.yaml << EOF

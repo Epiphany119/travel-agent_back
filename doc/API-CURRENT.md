@@ -1,8 +1,8 @@
 # Roamly 当前 API 合约
 
-> 版本：2026-08-31  
-> 适用范围：当前 `travel-agent-back` 源码，以及同级的 `travel-agent-front` 前端。  
-> 这份文档以 Controller、Service 和前端 `src/api` 的实际实现为准；发现文档与代码不一致时，先修正代码或在这里记录迁移说明。
+> 版本：2026-09-04
+> 适用范围：当前 `travel-agent` 单仓源码；Vue 前端位于 `frontend/`，Spring Boot 后端位于根目录 Maven 模块。
+> 这份文档以 Controller、Service 和前端 `frontend/src/api` 的实际实现为准；发现文档与代码不一致时，先修正代码或在这里记录迁移说明。
 
 ## 1. 运行地址与通用约定
 
@@ -25,7 +25,7 @@
 Authorization: Bearer <token>
 ```
 
-`src/api/index.ts` 会自动注入 Token；收到 HTTP 401 时清理本地登录状态并跳转 `/auth`。
+`frontend/src/api/index.ts` 会自动注入 Token；收到 HTTP 401 时清理本地登录状态并跳转 `/auth`。
 
 当前版本仍有一部分历史接口使用 `userId`、`reporterId`、`reviewerId` 等请求参数识别操作者，并保留 `user_001` 默认值。这是兼容旧数据的过渡实现，不应视为最终权限模型。新接口应优先从已验证的 Token 解析用户身份，并逐步移除客户端可控的身份参数。
 

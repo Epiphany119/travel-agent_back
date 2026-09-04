@@ -1,565 +1,117 @@
-# 🚀 Roamly 智能旅行规划 Agent
+# Roamly 智能旅行规划 Agent
 
-> 当前实现说明（2026-08-31）：本项目现在由同级的 Vue 3 前端和本 Spring Boot 后端组成。当前端口、模块关系、接口和请求链路请以以下文档为准；本文后面的旧版架构草稿保留作演进参考，不再作为启动说明。
+`travel-agent` 是一个前后端一体的单仓项目：Vue 3 前端位于 `frontend/`，Java 17 + Spring Boot 后端和全部 Maven 模块位于仓库根目录。前后端 Git 历史均保留在当前仓库中。
 
-## 当前文档入口
+## 文档入口
 
-- [当前 API 合约](doc/API-CURRENT.md)：按 Controller 和前端 `src/api` 对齐的接口索引、请求体、SSE、权限和版权治理规则。
-- [当前架构说明](doc/ARCHITECTURE-CURRENT.md)：前后端边界、Maven 模块、数据所有权和可靠性约束。
-- [核心请求链路](doc/REQUEST-FLOWS.md)：规划、SSE、笔记编辑、社区复制和举报审核的时序图。
-- [扩展 API 示例](API.md)：较完整的请求示例；若与当前合约冲突，以 `doc/API-CURRENT.md` 和源码为准。
-- [前端说明](../travel-agent-front/README.md)：Vue 页面路由、Vite 代理和编辑器数据边界。
+- [当前 API 合约](doc/API-CURRENT.md)：按 Controller 与 `frontend/src/api` 对齐的接口索引、请求体、SSE、权限和版权治理规则。
+- [当前架构说明](doc/ARCHITECTURE-CURRENT.md)：前后端边界、Maven 模块、数据所有权与可靠性约束。
+- [核心请求链路](doc/REQUEST-FLOWS.md)：规划、SSE、笔记编辑、社区复制和举报审核时序。
+- [部署说明](doc/DEPLOYMENT.md)：本地与容器化部署参考。
+- [扩展 API 示例](API.md)：更完整的请求示例；若与当前合约冲突，以源码和 `doc/API-CURRENT.md` 为准。
+- [前端说明](frontend/README.md)：页面路由、Vite 代理和编辑器数据边界。
 
-## 当前启动方式
+## 项目结构
 
-后端 Web 聚合入口默认 `8080`，前端开发服务器默认 `5173`：
-
-```bash
-mvn spring-boot:run -pl travel-web -am
-cd ../travel-agent-front && npm install && npm run dev -- --host 127.0.0.1
-```
-
-前端会把 `/api`、`/a2a`、`/uploads` 转发到 `http://localhost:8080`。首次配置数据库时，先执行 `data/schema_clean.sql`（新库）或对应业务 migration（已有库），不要对已有数据重复执行带 `DROP TABLE` 的纯净 schema。
-
-基于 MCP (Model Context Protocol) + A2A (Agent-to-Agent) 架构的多 Agent 协作旅行规划系统。通过多个专业化 Agent 协作，智能完成旅行目的地规划、天气查询、地点推荐、餐饮搜索和预算估算。
-
-## 历史版本功能特性（保留供参考）
-
-- 🔄 **多 Agent 协作** - Planner、Coordinator、Executor 三个 Agent 分工协作
-- 📡 **实时流式响应** - SSE 流式输出，实时展示规划过程
-- 🌤️ **天气查询** - 支持 7 天天气预报，覆盖 44 个常用城市
-- 📍 **地点推荐** - 高德地图 POI 搜索，景点、地标全覆盖
-- 🍜 **餐饮搜索** - 智能餐厅推荐，口味偏好匹配
-- 💰 **预算估算** - 根据天数和目的地智能估算旅行费用
-- 🗺️ **行程规划** - 自动生成每日行程安排
-- 🔌 **MCP 协议** - 标准化的工具调用协议，易于扩展
-
-## 历史架构草稿（请以 `doc/ARCHITECTURE-CURRENT.md` 为准）
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Frontend (React)                            │
-│                          http://localhost:3000                           │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                │ HTTP / SSE
-┌───────────────────────────────▼─────────────────────────────────────────┐
-│                     A2A Runtime (Spring AI)                             │
-│                     http://localhost:8086                                │
-│                                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │   Planner    │  │  Coordinator │  │   Executor   │  │    Host    │  │
-│  │    Agent     │  │    Agent     │  │    Agent     │  │    Agent   │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └────────────┘  │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                │ MCP Client (HTTP)
-┌───────────────────────────────▼─────────────────────────────────────────┐
-│                         MCP Server 集群                                   │
-│                                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │
-│  │  Weather    │  │     POI     │  │    Meal     │  │   Budget    │   │
-│  │   Server   │  │   Server    │  │   Server    │  │   Server    │   │
-│  │   :8081    │  │   :8082     │  │   :8083     │  │   :8084     │   │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │
-│                                                                             │
-│  ┌─────────────┐                                                          │
-│  │ Itinerary   │                                                          │
-│  │   Server    │                                                          │
-│  │   :8085     │                                                          │
-│  └─────────────┘                                                          │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                │
-          ┌─────────────────────┼─────────────────────┐
-          ▼                     ▼                     ▼
-    ┌──────────┐          ┌──────────┐          ┌──────────┐
-    │ 高德天气  │          │ 高德地图  │          │ 餐饮搜索  │
-    │   API    │          │   API    │          │   API    │
-    └──────────┘          └──────────┘          └──────────┘
-```
-
-## 📦 微服务模块
-
-| 模块 | 端口 | 技术栈 | 说明 |
-|------|------|--------|------|
-| travel-frontend | 3000 | React + Vite + TailwindCSS | 前端界面 |
-| travel-a2a-runtime | 8086 | Spring Boot + Spring AI | A2A 运行时，核心编排 |
-| travel-mcp-server-weather | 8081 | Spring Boot | 天气查询服务 |
-| travel-mcp-server-poi | 8082 | Spring Boot | 地点搜索服务 |
-| travel-mcp-server-meal | 8083 | Spring Boot | 餐饮推荐服务 |
-| travel-mcp-server-budget | 8084 | Spring Boot | 预算估算服务 |
-| travel-mcp-server-itinerary | 8085 | Spring Boot | 行程规划服务 |
-
-## 🛠️ 技术栈
-
-### 后端
-
-- **核心框架**: Java 17, Spring Boot 3.2.4
-- **AI 能力**: Spring AI 1.0.0-M4
-- **LLM**: OpenAI GPT-4o-mini / 智谱 GLM-4
-- **数据库**: MySQL 8.0 + MyBatis-Plus 3.5.5
-- **工具库**: Lombok, Hutool 5.8.23
-- **构建工具**: Maven 3.x
-
-### 前端
-
-- **框架**: React 18
-- **语言**: TypeScript 5
-- **构建工具**: Vite 5
-- **样式**: TailwindCSS 3.4
-- **Markdown**: react-markdown
-
-### 协议
-
-- **MCP**: Model Context Protocol - AI 工具调用标准
-- **A2A**: Agent-to-Agent - 多 Agent 通信协议
-
-## 📁 项目结构
-
-```
-travel-agent-back/
-├── pom.xml                           # 父 POM
-│
-├── .env.example                      # 环境变量示例
-│
-├── travel-frontend/                  # 前端应用
+```text
+travel-agent/
+├── frontend/                      # Vue 3 + Vite 前端
 │   ├── src/
-│   │   ├── App.tsx                  # 主应用组件
-│   │   ├── api/                     # API 调用
-│   │   ├── components/              # React 组件
-│   │   ├── hooks/                  # 自定义 Hooks
-│   │   ├── types/                   # TypeScript 类型
-│   │   ├── index.css               # 全局样式
-│   │   └── main.tsx                # 入口文件
+│   ├── public/
 │   ├── package.json
-│   └── vite.config.ts
-│
-├── travel-a2a-runtime/               # A2A 运行时核心
-│   └── src/main/java/com/travel/a2a/
-│       ├── A2aRuntimeApplication.java
-│       ├── config/                   # 配置类
-│       ├── controller/               # 控制器
-│       ├── model/                    # 数据模型
-│       └── service/                  # 服务层
-│           ├── orchestrator/         # 编排器
-│           └── subagent/             # 子 Agent
-│
-├── travel-common/                     # 公共模块
-│   └── src/main/java/com/travel/common/
-│       ├── core/                    # 核心工具类
-│       └── ratelimit/               # 熔断限流
-│
-├── travel-mcp-protocol/              # MCP 协议定义
-│   └── src/main/java/com/travel/mcp/
-│       ├── dto/                     # 数据传输对象
-│       ├── jsonrpc/                 # JSON-RPC 核心
-│       ├── a2a/                     # A2A 协议
-│       └── util/                    # 工具类
-│
-├── travel-mcp-client/                 # MCP 客户端
-│   └── src/main/java/com/travel/mcp/
-│       ├── client/                  # 客户端实现
-│       └── config/                  # 配置类
-│
-├── travel-mcp-server-weather/         # 天气服务 (:8081)
-├── travel-mcp-server-poi/           # POI 服务 (:8082)
-├── travel-mcp-server-meal/           # 餐饮服务 (:8083)
-├── travel-mcp-server-budget/          # 预算服务 (:8084)
-│
-├── travel-module-agent-biz/           # Agent 业务模块
-│   └── src/main/java/com/travel/
-│       ├── controller/
-│       ├── service/
-│       ├── domain/
-│       └── infra/
-│
-├── travel-module-itinerary-biz/       # 行程规划模块
-├── travel-module-user-biz/            # 用户模块
-│
-└── travel-web/                       # Web 入口 (:8080)
-    └── src/main/java/com/travel/
-        └── TravelWebApplication.java
+│   └── vite.config.js
+├── travel-common/                 # 公共响应、异常、限流和工具
+├── travel-module-auth-biz/        # 认证、Token 和邮箱验证码
+├── travel-module-user-biz/        # 用户、偏好、社区和版权治理
+├── travel-module-note-biz/        # 数据库笔记与图片
+├── travel-module-agent-biz/       # 对话、问卷 Agent 和工具编排
+├── travel-module-itinerary-biz/   # 结构化旅行计划
+├── travel-module-mcp-biz/         # MCP 协议、客户端和工具服务
+├── travel-a2a-runtime/             # A2A Host 与子 Agent
+├── travel-web/                     # 浏览器面向的聚合服务（8080）
+├── data/                           # Schema、migration 和种子数据
+├── doc/                            # API、架构、链路与部署文档
+├── docker-compose.yml
+└── pom.xml
 ```
 
-## 🚀 快速开始
+## 本地开发
 
 ### 环境要求
 
 | 组件 | 最低版本 | 推荐版本 |
-|------|----------|----------|
+|---|---:|---:|
 | JDK | 17 | 17 LTS |
 | Maven | 3.8 | 3.9+ |
 | Node.js | 18 | 20 LTS |
 | MySQL | 8.0 | 8.0.33+ |
+| Redis | 6 | 7+ |
 
-### 方式一：手动启动
-
-#### 1. 克隆项目
-
-```bash
-git clone <repository-url>
-cd travel-agent-back
-```
-
-#### 2. 安装依赖
-
-```bash
-# 后端 - 编译项目
-mvn clean install -DskipTests
-```
-
-#### 3. 配置环境变量
-
-创建 `.env` 文件并填入 API Key：
+### 1. 配置后端
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env` 文件：
+按需填写数据库、Redis、邮箱、天气、高德和 LLM 配置。新数据库先执行 `data/schema_clean.sql`；已有数据库只执行对应 migration，不要重复运行包含 `DROP TABLE` 的纯净 Schema。
+
+### 2. 启动后端
 
 ```bash
-# 编辑 .env
-vim .env
+mvn spring-boot:run -pl travel-web -am
 ```
 
-```env
-# API Keys
-WEATHER_API_KEY=your_qweather_api_key
-GAODE_API_KEY=your_amap_api_key
-ZHIPU_API_KEY=your_zhipu_api_key
-OPENAI_API_KEY=your_openai_api_key
-
-# 数据库 (可选)
-TRAVEL_DB_USERNAME=root
-TRAVEL_DB_PASSWORD=your_password
-```
-
-**API Key 申请地址**：
-- 和风天气: https://dev.qweather.com/
-- 高德地图: https://lbs.amap.com/
-- 智谱 AI: https://open.bigmodel.cn/
-
-#### 4. 启动 MySQL (可选)
+也可使用当前 macOS 本地启动脚本：
 
 ```bash
-docker run -d \
-  --name travel-mysql \
-  -e MYSQL_ROOT_PASSWORD=your_password \
-  -e MYSQL_DATABASE=travel_agent \
-  -p 3306:3306 \
-  mysql:8.0
+./start-backend.sh
 ```
 
-#### 5. 启动 MCP Server 集群
+后端聚合入口默认是 `http://localhost:8080`。
 
-在 5 个终端分别运行：
+### 3. 启动前端
 
-```bash
-# 终端 1 - Weather Server
-cd travel-mcp-server-weather && mvn spring-boot:run
-
-# 终端 2 - POI Server
-cd travel-mcp-server-poi && mvn spring-boot:run
-
-# 终端 3 - Meal Server
-cd travel-mcp-server-meal && mvn spring-boot:run
-
-# 终端 4 - Budget Server
-cd travel-mcp-server-budget && mvn spring-boot:run
-
-# 终端 5 - Itinerary Server (可选)
-cd travel-mcp-server-itinerary && mvn spring-boot:run
-```
-
-#### 6. 启动 A2A Runtime
+另开一个终端，在仓库根目录运行：
 
 ```bash
-cd travel-a2a-runtime && mvn spring-boot:run
-```
-
-#### 7. 启动前端
-
-```bash
-cd travel-frontend
+cd frontend
 npm install
-npm run dev
+npm run dev -- --host 127.0.0.1
 ```
 
-访问 http://localhost:3000
+前端地址为 `http://localhost:5173`。Vite 会将 `/api`、`/a2a` 和 `/uploads` 转发到 `http://localhost:8080`。
 
-### 方式二：前端单独开发
-
-如果只想开发前端，可以连接远程后端：
+## 构建与验证
 
 ```bash
-cd travel-frontend
+# 后端测试
+mvn test
 
-# 创建 .env 文件
-echo "VITE_API_BASE_URL=http://your-backend-host:8086" > .env
-
-npm install
-npm run dev
+# 前端类型检查和生产构建
+npm --prefix frontend ci
+npm --prefix frontend run build
 ```
 
-## 🔧 环境变量配置
+登录后重点回归 `/explore`、`/chat`、`/notes`、`/profile` 与 `/users/search`。SSE 规划需同时验证增量文字、外部数据告警、取消和重试状态。
 
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `OPENAI_API_KEY` | 是 | - | OpenAI API Key |
-| `ZHIPU_API_KEY` | 否 | - | 智谱 API Key (备选) |
-| `WEATHER_API_KEY` | 是 | - | 和风天气 API Key |
-| `GAODE_API_KEY` | 是 | - | 高德地图 API Key |
-| `TRAVEL_DB_USERNAME` | 否 | root | 数据库用户名 |
-| `TRAVEL_DB_PASSWORD` | 否 | - | 数据库密码 |
-
-### MCP Server URL 配置
-
-| 服务 | 配置项 | 默认值 |
-|------|--------|--------|
-| Weather | `mcp.server.weather.url` | `http://localhost:8081` |
-| POI | `mcp.server.poi.url` | `http://localhost:8082` |
-| Meal | `mcp.server.meal.url` | `http://localhost:8083` |
-| Budget | `mcp.server.budget.url` | `http://localhost:8084` |
-| Itinerary | `mcp.server.itinerary.url` | `http://localhost:8085` |
-
-## 📡 API 接口
-
-### A2A Runtime API (8086)
-
-#### SSE 流式规划
-
-```http
-GET /a2a/tasks/stream?request={user_request}
-```
-
-实时流式返回规划结果。
-
-#### 异步规划任务
-
-```http
-POST /a2a/tasks
-Content-Type: application/json
-
-{
-  "request": "帮我规划北京3日游，预算5000元"
-}
-```
-
-### Web API (8080)
-
-#### 旅行规划
-
-```http
-POST /api/travel/plan
-Content-Type: application/json
-
-{
-  "request": "帮我规划北京3日游"
-}
-```
-
-#### 查询天气
-
-```http
-GET /api/travel/weather?city=北京
-```
-
-#### 搜索 POI
-
-```http
-GET /api/travel/poi?keywords=故宫&city=北京
-```
-
-#### 健康检查
-
-```http
-GET /api/travel/health
-```
-
-### MCP Server API
-
-#### 获取服务器信息
-
-```http
-GET /mcp/info
-```
-
-#### 调用工具
-
-```http
-POST /mcp/call
-Content-Type: application/json
-
-{
-  "jsonrpc": "2.0",
-  "id": "1",
-  "method": "tools/call",
-  "params": {
-    "name": "weather.get_forecast",
-    "arguments": {
-      "city": "北京"
-    }
-  }
-}
-```
-
-## 🛠️ 开发指南
-
-### 添加新的 MCP Server
-
-1. **创建模块目录**
+## Docker Compose
 
 ```bash
-mkdir travel-mcp-server-{name}
-cd travel-mcp-server-{name}
+cp .env.example .env
+docker compose up --build
 ```
 
-2. **添加 pom.xml**
+容器前端默认发布到 `http://localhost:3000`，并由 Nginx 把 `/api`、`/a2a`、`/uploads` 转发给 `travel-web:8080`。
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project>
-    <parent>
-        <groupId>com.travel</groupId>
-        <artifactId>travel-agent</artifactId>
-        <version>1.0.0</version>
-    </parent>
-    
-    <artifactId>travel-mcp-server-{name}</artifactId>
-    
-    <properties>
-        <java.version>17</java.version>
-    </properties>
-</project>
-```
+## 主要技术栈
 
-3. **实现 MCP Controller**
+- 前端：Vue 3、TypeScript、Vite、Pinia、Vue Router、Element Plus。
+- 后端：Java 17、Spring Boot 3.2.4、MyBatis-Plus、MySQL、Redis。
+- Agent：Spring AI、A2A 编排、MCP 天气/POI/餐饮/预算工具、SSE 流式输出。
 
-```java
-@RestController
-@RequestMapping("/mcp")
-public class XxxMcpController {
-    
-    @GetMapping("/info")
-    public JsonRpcResponse getServerInfo() {
-        // 返回服务器信息和工具列表
-    }
-    
-    @PostMapping("/call")
-    public JsonRpcResponse callTool(@RequestBody JsonRpcRequest request) {
-        // 处理工具调用
-    }
-}
-```
+## 数据边界
 
-4. **注册到 A2A Runtime**
-
-在 `application.yml` 中添加：
-
-```yaml
-mcp:
-  server:
-    xxx:
-      url: http://localhost:808X
-```
-
-### 添加新的 Agent 工具
-
-1. **在对应的 MCP Server 中添加工具方法**
-
-2. **定义工具描述**
-
-```java
-public static McpTool newTool() {
-    return new McpTool(
-        "namespace.tool_name",
-        "工具描述 (AI 友好)",
-        Map.of(
-            "type", "object",
-            "properties", Map.of(
-                "param1", Map.of("type", "string", "description", "参数描述")
-            ),
-            "required", List.of("param1")
-        )
-    );
-}
-```
-
-3. **实现工具逻辑**
-
-### 调试技巧
-
-#### 查看 MCP Server 日志
-
-每个 MCP Server 启动时会输出工具列表：
-
-```
-Registered tools:
-- weather.get_forecast
-- ...
-```
-
-#### 限流状态查询
-
-```bash
-curl http://localhost:8080/api/ratelimit/status
-```
-
-#### 健康检查
-
-```bash
-# 检查所有服务
-for port in 8080 8081 8082 8083 8084 8086; do
-  echo -n ":$port ... "
-  curl -s "http://localhost:$port/health" > /dev/null && echo "OK" || echo "FAILED"
-done
-```
-
-## ❓ 常见问题
-
-### 1. MCP Server 连接失败
-
-**问题**: A2A Runtime 无法连接 MCP Server
-
-**解决**:
-1. 检查 MCP Server 是否正常启动: `lsof -i :8081`
-2. 验证端口未被占用
-3. 检查 `application.yml` 中的 URL 配置
-4. 查看 MCP Server 日志排查具体错误
-
-### 2. API Key 无效
-
-**问题**: 返回 "API Key 无效" 或限流错误
-
-**解决**:
-1. 确认 API Key 正确配置在 `.env` 文件
-2. 验证 API Key 是否过期或额度用完
-3. 检查环境变量是否正确加载
-
-### 3. 天气/POI 数据为空
-
-**问题**: 查询返回空结果
-
-**解决**:
-1. 检查 API Key 权限和配额
-2. 确认城市名称正确 (支持中文)
-3. 查看具体 API 返回的错误信息
-
-### 4. 前端无法连接后端
-
-**问题**: 前端页面加载失败或无响应
-
-**解决**:
-1. 确认 A2A Runtime 已启动在 8086 端口
-2. 检查前端 `.env` 中的 `VITE_API_BASE_URL`
-3. 验证 CORS 配置是否正确
-
-## 📚 相关文档
-
-- [API 接口文档](doc/API.md) - 详细的 API 说明
-- [架构设计文档](doc/ARCHITECTURE.md) - 系统架构详解
-- [详细设计文档](doc/DESIGN.md) - 核心模块设计
-- [部署文档](doc/DEPLOYMENT.md) - 生产环境部署
-
-## 📄 License
-
-MIT License
+- 数据库笔记通过 `/api/notes` 保存，可分享和发布。
+- 本地文件工作区只保存路径、文件句柄和编辑快照；只有用户主动“写回文件”才修改源文件。
+- 社区复制和版权追踪使用帖子 ID，不使用聊天 session。
+- 发布前按相似度与信誉分进入自动放行、Agent 自动退回或人工审核流程。

@@ -89,7 +89,7 @@ const replaces = [
   ['box-shadow: 0 10px 20px rgba(242,122,79,.25)', 'box-shadow: 0 8px 18px rgba(242,122,79,.28)']
 ]
 
-const root = '/Users/epiphany/IdeaProjects/travel-agent-front'
+const root = path.resolve(__dirname, '..')
 for (const f of files) {
   const p = path.join(root, f)
   let s = fs.readFileSync(p, 'utf8')
