@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor
+.DS_Store
+*.local
+
+# Testing
+coverage/
+
+# Vite
+.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+# 禁止提交与 .ts 源文件同名的就地编译产物（防止重演 .js 覆盖导出 bug）
+src/**/*.js
+src/**/*.js.map

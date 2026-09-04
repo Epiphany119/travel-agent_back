@@ -1,0 +1,48 @@
+:root {
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --motion-smooth: cubic-bezier(.22, 1, .36, 1);
+}
+
+::selection { background: color-mix(in srgb, var(--forest) 24%, transparent); color: var(--ink); }
+
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}
+
+.workspace-route-view { animation: route-enter var(--motion-base) var(--motion-smooth); }
+@keyframes route-enter { from { opacity: .78; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 所有功能页共享相同的阅读宽度和滚动行为，避免页面之间跳动。 */
+.workspace-route-view > .page,
+.workspace-route-view > .shell,
+.workspace-route-view > .search-page,
+.workspace-route-view > .publish-page,
+.workspace-route-view > .card-detail-page,
+.workspace-route-view > .map-shell,
+.workspace-route-view > .agent-page,
+.workspace-route-view > .app-shell {
+  min-height: 100%;
+  color: var(--ink);
+}
+
+.el-dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--card); overflow: hidden; }
+.el-dialog__header { margin-right: 0; padding: 18px 22px 14px; border-bottom: 1px solid var(--line); }
+.el-dialog__title { color: var(--ink); font-weight: 750; }
+.el-dialog__body { color: var(--ink); }
+.el-input__wrapper, .el-textarea__inner, .el-select__wrapper {
+  background: var(--card); box-shadow: 0 0 0 1px var(--line) inset;
+  transition: box-shadow var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.el-input__wrapper:hover, .el-input__wrapper.is-focus, .el-textarea__inner:focus, .el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--forest) inset, 0 0 0 3px color-mix(in srgb, var(--forest) 10%, transparent);
+}
+.el-button { border-radius: 8px; font-weight: 700; transition: transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background var(--motion-fast) ease; }
+.el-button:not(:disabled):hover { transform: translateY(-1px); }
+.el-message, .el-message-box { border-color: var(--line); background: var(--card); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
